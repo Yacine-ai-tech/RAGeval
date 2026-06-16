@@ -55,3 +55,7 @@ multi-embedding & retrieval-strategy endpoints, pgvector backend) is the next ma
 - **GPU (earlier):** BGE-large embeddings validated on T4 (sim revenue~sales 0.673 ≫ revenue~cat 0.273).
 - **Writing (Week 15):** `drafts/` (gitignored): `blog_post_5_llmops_eval.md`,
   `upwork_proposal_templates.md` (3 niches), `preprint_outline_multijudge.md` (preprint pre-work).
+
+## Comprehensive QA pass (2026-06-16)
+- **15 tests pass** + **rageval package** imports + builds wheel (PyPI-ready). §5.10 verified: multi-judge consensus, OpenTelemetry, multi-embedding, retrieval-bench, DSPy.
+- All 6 projects + both packages green; 28/28 STRATEGY §.10 feature claims code-verified.
