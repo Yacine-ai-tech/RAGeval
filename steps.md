@@ -1,0 +1,43 @@
+# RAGeval — STEPS LOG (living document)
+
+> Continuous engineering log of **every** action on RAGeval from Week 0 to now. Append newest at
+> the bottom. Absolute dates. Branch model: feature branch → PR → merge into `develop`. Secrets
+> live only in `.env`/`secrets.md` (gitignored) — never here.
+
+## Project in one line
+Drop-in LLMOps observability: multi-judge LLM evaluation with consensus, multi-embedding &
+retrieval-strategy benchmarks, OpenTelemetry export, SQLite (dev) / pgvector (prod). Port 8003.
+
+## Week 0 — scaffold & split (2026-05-20 → 06-05)
+- `f607e64` initial scaffold from the OmniIntelOS split (`api.py`, `core/`, `rageval/evaluator.py`,
+  `core/performance.py`).
+- `6b15d1f` CI pytest; `8c95c82` **fix:** populate `rageval/__init__.py` with version + lazy
+  public API; `4186c29` finalize Week 0; `aae3741` `docker-compose.dev.yml`.
+- Status: **scaffold** — package + evaluator wired, 1 smoke test, Phase 5 feature work pending.
+
+## New-account Studio provisioning + .env hardening (2026-06-16)
+- Cloned onto `upwork_new` Studio; `.env` recreated with real secrets (Anthropic, Groq),
+  `RAGEVAL_STORE=sqlite`, `JUDGE_MODELS=anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile`
+  (dropped the OpenAI judge — no OpenAI key configured), `EMBEDDING_MODEL=BAAI/bge-large-en-v1.5`;
+  synced local ↔ Studio.
+
+## GPU validation (T4, 2026-06-16)
+- **Embedding backbone validated on the T4**: `BAAI/bge-large-en-v1.5` loaded on CUDA (6.5s),
+  1024-dim vectors, semantic sanity `sim(revenue, sales)=0.673` ≫ `sim(revenue, cat)=0.273`.
+  Confirms the embedding model used for the multi-embedding comparison + retrieval benchmarks.
+  Switched Studio back to CPU after (billing).
+
+## Current state
+Scaffold + validated embedding backbone. Phase 5 build (multi-judge consensus, OTel export,
+multi-embedding & retrieval-strategy endpoints, pgvector backend) is the next major work.
+
+---
+
+## Next — industry & research-standard improvements (planned)
+1. **Standard RAG metrics**: implement RAGAS-style faithfulness / context precision-recall /
+   answer relevance + a labeled eval set; expose `/evaluate`.
+2. **Multi-judge consensus** (Claude Haiku + Groq) with agreement stats + bias checks.
+3. **OpenTelemetry / OpenLLMetry** span export (enterprise observability standard).
+4. **Multi-embedding comparison** endpoint (BGE vs e5 vs others) + **retrieval-strategy A/B**
+   (dense vs hybrid vs rerank) on a fixed corpus — directly consumes IntelAI's GraphRAG deltas.
+5. **pgvector** prod backend for millions of interactions.
