@@ -41,3 +41,17 @@ multi-embedding & retrieval-strategy endpoints, pgvector backend) is the next ma
 4. **Multi-embedding comparison** endpoint (BGE vs e5 vs others) + **retrieval-strategy A/B**
    (dense vs hybrid vs rerank) on a fixed corpus — directly consumes IntelAI's GraphRAG deltas.
 5. **pgvector** prod backend for millions of interactions.
+
+## Phase 5 build pass (2026-06-16, post-GPU)
+- **Assessment:** scaffold was substantially real — `evaluator.py` (multi-judge consensus, 5
+  scorers, real per-model cost tables, flags, persona-aware), `store.py` (SQLite), `otel_exporter`,
+  `dspy_integration`, `decorator`, `cli`, 9 API endpoints (log/score/metrics/queries/cost-report/
+  alerts/retrieval-bench/embedding-comparison).
+- **BUG FOUND (real, not test-only):** `store.py` never `expanduser`'d or created the parent dir
+  for the SQLite path (`~/.rageval/rageval.db`) → `unable to open database file` on a fresh box.
+  **Fix:** `_db_path()` with live env override + `expanduser` + `makedirs`.
+- **Tests (Week 13):** added `test_evaluator.py` (pure cost math + scorer edges), `test_store.py`
+  (SQLite round-trip), `test_api.py` (health/routes/metrics offline). **Studio pytest: 15 passed.**
+- **GPU (earlier):** BGE-large embeddings validated on T4 (sim revenue~sales 0.673 ≫ revenue~cat 0.273).
+- **Writing (Week 15):** `drafts/` (gitignored): `blog_post_5_llmops_eval.md`,
+  `upwork_proposal_templates.md` (3 niches), `preprint_outline_multijudge.md` (preprint pre-work).

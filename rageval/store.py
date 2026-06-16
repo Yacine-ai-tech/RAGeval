@@ -41,9 +41,18 @@ CREATE INDEX IF NOT EXISTS idx_rageval_model ON rageval_log(model);
 """
 
 
+def _db_path() -> str:
+    """Resolve the SQLite path (live env override, expand ~) and ensure its parent dir exists."""
+    path = os.path.expanduser(os.environ.get("RAGEVAL_DB_PATH") or settings.RAGEVAL_DB_PATH)
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    return path
+
+
 def _conn() -> sqlite3.Connection:
     """Open a SQLite connection (Postgres support would override here)."""
-    c = sqlite3.connect(settings.RAGEVAL_DB_PATH)
+    c = sqlite3.connect(_db_path())
     c.row_factory = sqlite3.Row
     return c
 
