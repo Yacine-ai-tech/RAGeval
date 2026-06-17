@@ -15,13 +15,15 @@ from rageval._compat import settings, get_logger  # self-contained (works when p
 log = get_logger(__name__)
 
 try:
-    from sentence_transformers import SentenceTransformer
+    # NOTE: sentence_transformers pulls in torch (~400MB resident) — importing it at module load
+    # OOMs small (512MB) hosts before the app can even serve /health. So we import only the light
+    # deps here and defer the heavy SentenceTransformer import into _ensure_embedder() (lazy).
     from sklearn.metrics.pairwise import cosine_similarity
     import numpy as np
     _ST = True
 except ImportError:
     _ST = False
-    log.warning("sentence-transformers / sklearn not installed — embedding scorers stub")
+    log.warning("sklearn / numpy not installed — embedding scorers stub")
 
 try:
     from litellm import acompletion
@@ -59,6 +61,11 @@ class RAGEvaluator:
         if not _ST:
             return None
         if self._embedder is None:
+            try:
+                from sentence_transformers import SentenceTransformer  # lazy: torch loads only now
+            except ImportError:
+                log.warning("sentence-transformers not installed — embedding scorer unavailable")
+                return None
             log.info("Loading embedding model: %s", self.embedding_model_name)
             self._embedder = SentenceTransformer(self.embedding_model_name)
         return self._embedder
