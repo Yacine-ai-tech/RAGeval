@@ -70,3 +70,10 @@ multi-embedding & retrieval-strategy endpoints, pgvector backend) is the next ma
   consensus **acc 0.820 / F1 0.816 / ROC-AUC 0.881**, beating both solo judges (Haiku 0.78,
   Groq 0.74). Disagreement→error signal only marginal at N=50 (honest). Preprint outline updated
   with measured numbers.
+
+## FINAL scoreboard + Docker validation (2026-06-17)
+- **Docker**: /health **200** on :8003. **World-standard**: HaluEval multi-judge consensus **acc 0.82 / F1 0.82 / AUC 0.88**, beats both solo judges. Tests 15. Fixed real SQLite path bug.
+- Deployment validated via **Docker** (docker-compose.dev.yml), the isolated per-repo design —
+  NOT the shared conda env. All 6 repos: 6/6 containers serve /health.
+- **User-gated (cannot be done by the agent):** Railway/Fly deploy, PyPI upload (wheels built),
+  Loom recording, sending Upwork proposals, publishing blog/preprint drafts.
