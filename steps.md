@@ -63,3 +63,10 @@ multi-embedding & retrieval-strategy endpoints, pgvector backend) is the next ma
 ## Remediation — LIVE behavior validation (2026-06-17)
 - Added `tests/test_live_judges.py` (real LLM, skip-if-no-key): **multi-judge consensus LIVE**: grounded=0.90 vs hallucinated=0.00 (real Claude Haiku + Groq judges) — the central claim now has real numbers.
 - Addresses the "tests prove imports not behavior" gap with a real, measured run.
+
+## Remediation — research-grade judge benchmark (2026-06-17)
+- `eval/run_judge_benchmark.py` + `eval/JUDGE_BENCHMARK.md`: multi-judge consensus on **HaluEval**
+  (standard hallucination benchmark), standard metrics. **50 labelled examples**:
+  consensus **acc 0.820 / F1 0.816 / ROC-AUC 0.881**, beating both solo judges (Haiku 0.78,
+  Groq 0.74). Disagreement→error signal only marginal at N=50 (honest). Preprint outline updated
+  with measured numbers.
