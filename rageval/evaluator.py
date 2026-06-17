@@ -70,10 +70,35 @@ class RAGEvaluator:
             self._embedder = SentenceTransformer(self.embedding_model_name)
         return self._embedder
 
+    def _remote_embed(self, texts: List[str]):
+        """Embed via the Lightning inference backend (LIGHTNING_EMBED_URL) so small (512MB) hosts
+        don't OOM loading torch. Returns a numpy array or None (caller falls back to local)."""
+        import os
+        url = os.getenv("LIGHTNING_EMBED_URL", "").strip()
+        if not url:
+            return None
+        try:
+            import json as _j, urllib.request
+            h = {"Content-Type": "application/json"}
+            tk = os.getenv("INFERENCE_TOKEN", "").strip()
+            if tk:
+                h["Authorization"] = "Bearer " + tk
+            req = urllib.request.Request(url.rstrip("/") + "/embed", data=_j.dumps({"texts": texts}).encode(), headers=h)
+            vecs = _j.loads(urllib.request.urlopen(req, timeout=float(os.getenv("LIGHTNING_EMBED_TIMEOUT", "30"))).read())["embeddings"]
+            return np.asarray(vecs)
+        except Exception as e:
+            log.warning("remote embed unavailable (%s) — local fallback", e)
+            return None
+
     def score_retrieval_relevance(self, query: str, chunks: List[str]) -> float:
-        """Cosine similarity between query and retrieved chunks (mean)."""
+        """Cosine similarity between query and retrieved chunks (mean). Uses the remote Lightning
+        embedder when configured (off-box, no OOM); else the local model."""
         if not chunks:
             return 0.0
+        remote = self._remote_embed([query] + chunks)
+        if remote is not None and len(remote) == len(chunks) + 1:
+            sims = cosine_similarity(remote[:1], remote[1:])[0]
+            return float(np.mean(sims))
         emb = self._ensure_embedder()
         if emb is None:
             return 0.0
