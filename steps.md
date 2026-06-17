@@ -77,3 +77,13 @@ multi-embedding & retrieval-strategy endpoints, pgvector backend) is the next ma
   NOT the shared conda env. All 6 repos: 6/6 containers serve /health.
 - **User-gated (cannot be done by the agent):** Railway/Fly deploy, PyPI upload (wheels built),
   Loom recording, sending Upwork proposals, publishing blog/preprint drafts.
+
+## Internationalization — multilingual embeddings documented (2026-06-17)
+STRATEGY §embeddings lists BGE-M3 as the multilingual option; default was the English baseline
+`bge-large-en-v1.5`. The evaluator already accepts any SentenceTransformers model, so the fix is
+to surface the switch: `.env.example` now documents `EMBEDDING_MODEL=BAAI/bge-m3` (100+ languages)
+for non-English / multilingual corpora, keeping the English baseline as the default.
+
+## Production-readiness — deploy-today pass (2026-06-17)
+- **Cloud $PORT binding:** Dockerfile CMD now `sh -c exec uvicorn … --port ${PORT:-8003}`; HEALTHCHECK
+  honors `${PORT:-8003}`. Added `railway.toml` (healthcheck /health). `.env` gitignored.
