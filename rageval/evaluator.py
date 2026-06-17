@@ -10,8 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.config import settings  # noqa: E402
-from core.logger import get_logger  # noqa: E402
+from rageval._compat import settings, get_logger  # self-contained (works when pip-installed)
 
 log = get_logger(__name__)
 

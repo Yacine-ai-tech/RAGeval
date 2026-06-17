@@ -25,7 +25,13 @@ def main() -> None:
         print("RAGeval DB initialized.")
         return
     if args.cmd == "serve":
-        import uvicorn
+        try:
+            import uvicorn
+        except ImportError:
+            print("`serve` needs the server extra:  pip install 'omnismart-rageval[server]'", file=sys.stderr)
+            sys.exit(1)
+        # `api:app` is the RAGeval app (run from a repo checkout). Library users typically mount
+        # rageval into their own app instead of using `serve`.
         uvicorn.run("api:app", host=args.host, port=args.port, reload=False)
         return
     p.print_help()
