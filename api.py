@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core.config import settings
@@ -35,7 +36,13 @@ from rageval.store import (
 log = get_logger(__name__)
 
 app = FastAPI(title="RAGeval", version="0.1.0", description="Drop-in LLMOps observability.")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ALLOWED_ORIGINS or ["*"],
+                   allow_methods=["*"], allow_headers=["*"])
+
+try:  # browser demo UI (served by the backend, no separate deploy)
+    app.mount("/demo", StaticFiles(directory="demo", html=True), name="demo")
+except RuntimeError:
+    log.warning("demo/ directory not found — /demo will not be served")
 
 evaluator = RAGEvaluator()
 
