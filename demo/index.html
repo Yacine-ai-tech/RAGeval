@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RAGeval — demo</title>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --bd:#30363d; --tx:#e6edf3; --mut:#8b949e; --ac:#3b82f6; --ok:#22c55e; }
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--tx);
+    font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:820px; margin:0 auto; padding:32px 20px 64px; }
+  h1 { font-size:1.6rem; margin:0 0 4px; } .sub { color:var(--mut); margin:0 0 24px; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:20px; margin-bottom:18px; }
+  label { display:block; font-size:.8rem; color:var(--mut); margin:12px 0 4px; text-transform:uppercase; letter-spacing:.04em; }
+  textarea,input { width:100%; background:#0d1117; color:var(--tx); border:1px solid var(--bd);
+    border-radius:8px; padding:10px; font:inherit; resize:vertical; }
+  textarea { min-height:64px; }
+  button { background:var(--ac); color:#fff; border:0; border-radius:8px; padding:11px 18px;
+    font:600 15px/1 inherit; cursor:pointer; margin-top:16px; } button:disabled { opacity:.5; cursor:wait; }
+  pre { background:#0d1117; border:1px solid var(--bd); border-radius:8px; padding:14px; overflow:auto; white-space:pre-wrap; }
+  .pill { display:inline-block; font-size:.72rem; padding:2px 8px; border-radius:999px; background:#1f2937; color:var(--mut); margin-left:8px; }
+  .pill.ok { background:#0f2e1b; color:var(--ok); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:12px; margin-top:12px; }
+  .metric { background:#0d1117; border:1px solid var(--bd); border-radius:8px; padding:12px; text-align:center; }
+  .metric b { display:block; font-size:1.4rem; } .metric span { font-size:.72rem; color:var(--mut); }
+  a { color:var(--ac); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>RAGeval <span id="health" class="pill">checking…</span></h1>
+  <p class="sub">Score a RAG answer for faithfulness, relevance & groundedness (multi-judge). Self-hosted LLMOps.</p>
+
+  <div class="card">
+    <label>Question</label>
+    <textarea id="q">What is the capital of France?</textarea>
+    <label>Answer (to evaluate)</label>
+    <textarea id="a">Paris is the capital of France.</textarea>
+    <label>Context (one source per line)</label>
+    <textarea id="c">France is a country in Western Europe; its capital and largest city is Paris.</textarea>
+    <button id="go" onclick="score()">Score answer</button>
+  </div>
+
+  <div class="card" id="out" style="display:none">
+    <div class="grid" id="metrics"></div>
+    <label style="margin-top:18px">Raw response</label>
+    <pre id="raw"></pre>
+  </div>
+  <p class="sub">API: <code>POST /eval/score</code> · metrics: <a href="/eval/metrics">/eval/metrics</a> · <a href="/docs">OpenAPI docs</a></p>
+</div>
+<script>
+async function health(){
+  try { const r = await fetch('/health'); const j = await r.json();
+    const el = document.getElementById('health');
+    el.textContent = j.status || 'ok'; el.className = 'pill ok';
+  } catch(e){ document.getElementById('health').textContent = 'offline'; }
+}
+async function score(){
+  const btn = document.getElementById('go'); btn.disabled = true; btn.textContent = 'Scoring…';
+  const body = {
+    query: document.getElementById('q').value,
+    answer: document.getElementById('a').value,
+    contexts: document.getElementById('c').value.split('\n').map(s=>s.trim()).filter(Boolean),
+  };
+  try {
+    const r = await fetch('/eval/score', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const j = await r.json();
+    document.getElementById('out').style.display = 'block';
+    document.getElementById('raw').textContent = JSON.stringify(j, null, 2);
+    const keys = ['faithfulness','relevance','groundedness','answer_relevance','context_precision','cost_usd'];
+    const m = document.getElementById('metrics'); m.innerHTML = '';
+    keys.forEach(k => { if (k in j) { const v = j[k];
+      m.innerHTML += `<div class="metric"><b>${typeof v==='number'?(k==='cost_usd'?'$'+v.toFixed(4):v.toFixed(2)):v}</b><span>${k}</span></div>`; }});
+  } catch(e){ document.getElementById('out').style.display='block'; document.getElementById('raw').textContent = 'Error: '+e; }
+  btn.disabled = false; btn.textContent = 'Score answer';
+}
+health();
+</script>
+</body>
+</html>
