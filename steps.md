@@ -96,3 +96,12 @@ platform `$PORT`, and boots cleanly. All 6 projects passed (OVERALL_RESULT=ALL_P
 Render build the same Dockerfile, so cloud deploy is validated end-to-end.
 - Prod hardening: CORS was hardcoded `allow_origins=["*"]` → now `settings.CORS_ALLOWED_ORIGINS or ["*"]`
   (new `CORS_ALLOWED_ORIGINS` env, documented in `.env.example`) — matches the other services.
+
+## Demo UI + PyPI publish (2026-06-17)
+- Added a backend-served demo at **/demo** (`demo/index.html`, mounted via StaticFiles) — a form
+  to POST `/eval/score` and render faithfulness/relevance/groundedness/cost. No separate deploy.
+- **Published to PyPI**: the bare name `rageval` is blocked (too-similar to an existing project),
+  so the distribution is **`omnismart-rageval`** (import name stays `rageval`;
+  `pip install omnismart-rageval` → `import rageval`; console script `rageval`). Live:
+  https://pypi.org/project/omnismart-rageval/0.1.0/ — built (setuptools), `twine check` PASSED,
+  test-installed from PyPI into a clean target (package + entry point verified).
