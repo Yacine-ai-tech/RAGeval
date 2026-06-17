@@ -35,7 +35,8 @@ from rageval.store import (
 log = get_logger(__name__)
 
 app = FastAPI(title="RAGeval", version="0.1.0", description="Drop-in LLMOps observability.")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ALLOWED_ORIGINS or ["*"],
+                   allow_methods=["*"], allow_headers=["*"])
 
 evaluator = RAGEvaluator()
 
