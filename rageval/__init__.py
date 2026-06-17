@@ -9,7 +9,14 @@ overrides are honoured at first use):
     get_metrics         aggregate metrics for the dashboard / API
 """
 
-__version__ = "0.1.0"
+try:  # single source of truth = the installed distribution version
+    from importlib.metadata import version as _v, PackageNotFoundError
+    try:
+        __version__ = _v("omnismart-rageval")
+    except PackageNotFoundError:
+        __version__ = "0.0.0+local"
+except Exception:  # pragma: no cover
+    __version__ = "0.0.0+local"
 
 __all__ = [
     "__version__",
