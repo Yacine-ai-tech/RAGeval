@@ -59,3 +59,7 @@ multi-embedding & retrieval-strategy endpoints, pgvector backend) is the next ma
 ## Comprehensive QA pass (2026-06-16)
 - **15 tests pass** + **rageval package** imports + builds wheel (PyPI-ready). §5.10 verified: multi-judge consensus, OpenTelemetry, multi-embedding, retrieval-bench, DSPy.
 - All 6 projects + both packages green; 28/28 STRATEGY §.10 feature claims code-verified.
+
+## Remediation — LIVE behavior validation (2026-06-17)
+- Added `tests/test_live_judges.py` (real LLM, skip-if-no-key): **multi-judge consensus LIVE**: grounded=0.90 vs hallucinated=0.00 (real Claude Haiku + Groq judges) — the central claim now has real numbers.
+- Addresses the "tests prove imports not behavior" gap with a real, measured run.
