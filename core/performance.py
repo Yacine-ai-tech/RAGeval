@@ -36,7 +36,7 @@ os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "4")
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Cache directories
-CACHE_DIR = Path.home() / ".cache" / "omniintelos"
+CACHE_DIR = Path.home() / ".cache" / "rageval"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_CACHE_DIR = CACHE_DIR / "models"
