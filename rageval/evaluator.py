@@ -78,10 +78,10 @@ class RAGEvaluator:
 
     _LAST_EMBED_WAKE = 0.0
 
-    def _remote_embed(self, texts: List[str]):
+    def _remote_embed(self, texts: List[str], model: Optional[str] = None):
         """Embed via the Lightning inference backend (LIGHTNING_EMBED_URL) so small (512MB) hosts
-        don't OOM loading torch. Returns a numpy array or None (caller falls back). On failure,
-        fire a non-blocking wake of the on-demand Studio so the next request gets real embeddings."""
+        don't OOM loading torch. Sends `model` so the Studio embeds with the requested model (real
+        multi-model comparison). Returns a numpy array or None; on failure wakes the Studio."""
         url = os.getenv("LIGHTNING_EMBED_URL", "").strip()
         if not url:
             return None
@@ -91,7 +91,10 @@ class RAGEvaluator:
             tk = os.getenv("INFERENCE_TOKEN", "").strip()
             if tk:
                 h["Authorization"] = "Bearer " + tk
-            req = urllib.request.Request(url.rstrip("/") + "/embed", data=_j.dumps({"texts": texts}).encode(), headers=h)
+            payload = {"texts": texts}
+            if model:
+                payload["model"] = model
+            req = urllib.request.Request(url.rstrip("/") + "/embed", data=_j.dumps(payload).encode(), headers=h)
             vecs = _j.loads(urllib.request.urlopen(req, timeout=float(os.getenv("LIGHTNING_EMBED_TIMEOUT", "30"))).read())["embeddings"]
             return np.asarray(vecs)
         except Exception as e:
@@ -120,11 +123,12 @@ class RAGEvaluator:
         threading.Thread(target=_go, daemon=True).start()
 
     def _embed(self, texts: List[str]):
-        """Embed texts: remote Lightning backend first (off-box, no OOM), local model only if
-        USE_LOCAL_EMBEDDER. Returns a numpy array or None (caller degrades to a neutral score)."""
+        """Embed texts with THIS evaluator's model (self.embedding_model_name): remote Lightning
+        backend first (off-box, no OOM), local model only if USE_LOCAL_EMBEDDER. Returns a numpy
+        array or None (caller degrades to a neutral score)."""
         if not texts:
             return None
-        remote = self._remote_embed(texts)
+        remote = self._remote_embed(texts, model=self.embedding_model_name)
         if remote is not None and len(remote) == len(texts):
             return remote
         emb = self._ensure_embedder()
