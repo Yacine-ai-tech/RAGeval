@@ -79,7 +79,7 @@ class RAGEvaluator:
             return None
         try:
             import json as _j, urllib.request
-            h = {"Content-Type": "application/json"}
+            h = {"Content-Type": "application/json", "User-Agent": "RAGeval/1.0 (+https://ysiddo-ai-projects.app)"}
             tk = os.getenv("INFERENCE_TOKEN", "").strip()
             if tk:
                 h["Authorization"] = "Bearer " + tk
