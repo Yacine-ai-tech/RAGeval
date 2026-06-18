@@ -58,7 +58,13 @@ class RAGEvaluator:
         self._embedder = None
 
     def _ensure_embedder(self):
+        # Local SentenceTransformer (torch ~400MB resident) is OFF by default: loading it on a
+        # 512MB host OOM-crashes the process (the /eval/score 502 we hit). Embedding scorers run
+        # via the remote Lightning backend (see _embed); set USE_LOCAL_EMBEDDER=true only where
+        # there's RAM headroom.
         if not _ST:
+            return None
+        if os.getenv("USE_LOCAL_EMBEDDER", "false").strip().lower() not in ("1", "true", "yes", "on"):
             return None
         if self._embedder is None:
             try:
@@ -70,10 +76,12 @@ class RAGEvaluator:
             self._embedder = SentenceTransformer(self.embedding_model_name)
         return self._embedder
 
+    _LAST_EMBED_WAKE = 0.0
+
     def _remote_embed(self, texts: List[str]):
         """Embed via the Lightning inference backend (LIGHTNING_EMBED_URL) so small (512MB) hosts
-        don't OOM loading torch. Returns a numpy array or None (caller falls back to local)."""
-        import os
+        don't OOM loading torch. Returns a numpy array or None (caller falls back). On failure,
+        fire a non-blocking wake of the on-demand Studio so the next request gets real embeddings."""
         url = os.getenv("LIGHTNING_EMBED_URL", "").strip()
         if not url:
             return None
@@ -87,24 +95,52 @@ class RAGEvaluator:
             vecs = _j.loads(urllib.request.urlopen(req, timeout=float(os.getenv("LIGHTNING_EMBED_TIMEOUT", "30"))).read())["embeddings"]
             return np.asarray(vecs)
         except Exception as e:
-            log.warning("remote embed unavailable (%s) — local fallback", e)
+            log.warning("remote embed unavailable (%s) — degrading + waking studio", e)
+            self._wake_studio()
             return None
 
-    def score_retrieval_relevance(self, query: str, chunks: List[str]) -> float:
-        """Cosine similarity between query and retrieved chunks (mean). Uses the remote Lightning
-        embedder when configured (off-box, no OOM); else the local model."""
-        if not chunks:
-            return 0.0
-        remote = self._remote_embed([query] + chunks)
-        if remote is not None and len(remote) == len(chunks) + 1:
-            sims = cosine_similarity(remote[:1], remote[1:])[0]
-            return float(np.mean(sims))
+    def _wake_studio(self):
+        """Fire-and-forget wake of the on-demand inference Studio (rate-limited)."""
+        import time as _t, threading
+        url = os.getenv("ORCHESTRATOR_URL", "").strip()
+        if not url or (_t.time() - RAGEvaluator._LAST_EMBED_WAKE) < 60:
+            return
+        RAGEvaluator._LAST_EMBED_WAKE = _t.time()
+        def _go():
+            try:
+                import json as _j, urllib.request
+                h = {"Content-Type": "application/json", "User-Agent": "RAGeval/1.0 (+https://ysiddo-ai-projects.app)"}
+                tk = os.getenv("ORCH_TOKEN", "").strip()
+                if tk:
+                    h["Authorization"] = "Bearer " + tk
+                urllib.request.urlopen(urllib.request.Request(url.rstrip("/") + "/wake",
+                    data=_j.dumps({"gpu": False}).encode(), headers=h), timeout=90)
+            except Exception:
+                pass
+        threading.Thread(target=_go, daemon=True).start()
+
+    def _embed(self, texts: List[str]):
+        """Embed texts: remote Lightning backend first (off-box, no OOM), local model only if
+        USE_LOCAL_EMBEDDER. Returns a numpy array or None (caller degrades to a neutral score)."""
+        if not texts:
+            return None
+        remote = self._remote_embed(texts)
+        if remote is not None and len(remote) == len(texts):
+            return remote
         emb = self._ensure_embedder()
         if emb is None:
+            return None
+        return np.asarray(emb.encode(texts))
+
+    def score_retrieval_relevance(self, query: str, chunks: List[str]) -> float:
+        """Mean cosine(query, retrieved chunks) — embeds off-box via the Lightning backend.
+        Returns 0.0 (neutral) when no embedder is available rather than crashing."""
+        if not chunks:
             return 0.0
-        q_vec = emb.encode([query])
-        c_vec = emb.encode(chunks)
-        sims = cosine_similarity(q_vec, c_vec)[0]
+        vecs = self._embed([query] + chunks)
+        if vecs is None or len(vecs) != len(chunks) + 1:
+            return 0.0
+        sims = cosine_similarity(vecs[:1], vecs[1:])[0]
         return float(np.mean(sims))
 
     async def _judge_groundedness(self, answer: str, context: str, model: str) -> float:
@@ -150,17 +186,18 @@ class RAGEvaluator:
         }
 
     def score_faithfulness(self, answer: str, chunks: List[str]) -> float:
-        """Embedding-similarity NLI proxy: max similarity to any chunk, averaged over sentences."""
+        """Embedding-similarity NLI proxy: max similarity to any chunk, averaged over sentences.
+        Embeds off-box via the Lightning backend (one batched call); 0.0 when unavailable."""
         if not chunks or not answer.strip():
-            return 0.0
-        emb = self._ensure_embedder()
-        if emb is None:
             return 0.0
         sentences = [s.strip() for s in answer.replace("!", ".").replace("?", ".").split(".") if s.strip()]
         if not sentences:
             return 0.0
-        chunk_vecs = emb.encode(chunks)
-        sent_vecs = emb.encode(sentences)
+        vecs = self._embed(chunks + sentences)  # one call: [chunks..., sentences...]
+        if vecs is None or len(vecs) != len(chunks) + len(sentences):
+            return 0.0
+        chunk_vecs = vecs[:len(chunks)]
+        sent_vecs = vecs[len(chunks):]
         sims = cosine_similarity(sent_vecs, chunk_vecs)
         per_sent_max = sims.max(axis=1)
         return float(np.mean(per_sent_max))
