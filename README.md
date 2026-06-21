@@ -6,6 +6,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
+> 🔗 **Live API:** https://rageval.ysiddo-ai-projects.app/health  ·  API-first (no web UI) — demo via `curl`/HTTPie.
+> On-demand backend (first request ~30–60 s to wake).
 
 ## The 60-Second Pitch
 
