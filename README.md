@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml/badge.svg)](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-[![PyPI](https://img.shields.io/pypi/v/rageval.svg)](https://pypi.org/project/rageval/)
+[![PyPI](https://img.shields.io/pypi/v/omnismart-rageval.svg)](https://pypi.org/project/omnismart-rageval/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
@@ -44,7 +44,7 @@ That's it. Open the dashboard at `localhost:8003`.
 ## Quick Start
 
 ```bash
-pip install rageval
+pip install omnismart-rageval     # distribution name; CLI + import remain `rageval`
 rageval init                 # creates ~/.rageval/rageval.db
 rageval serve --port 8003
 ```
