@@ -122,15 +122,58 @@ class RAGEvaluator:
                 pass
         threading.Thread(target=_go, daemon=True).start()
 
+    def _hosted_embed(self, texts: List[str]):
+        """Hosted embeddings backstop (Cohere ``/v2/embed`` by default, Jina ``/v1/embeddings``
+        alternate) so retrieval scoring stays real when the on-demand Lightning Studio is unreachable
+        and torch isn't installed — survives on a 512MB host. Enabled by ``HOSTED_EMBED_PROVIDER``
+        (cohere|jina) + the provider's free, no-card key. Returns np.ndarray or None. This is a
+        graceful fallback: true multi-model embedding comparison still uses the Studio (this path
+        always uses the hosted model, not self.embedding_model_name). Stdlib urllib only."""
+        provider = os.getenv("HOSTED_EMBED_PROVIDER", "").strip().lower()
+        if provider not in ("cohere", "jina"):
+            return None
+        key = os.getenv("COHERE_API_KEY" if provider == "cohere" else "JINA_API_KEY", "").strip()
+        if not key:
+            return None
+        try:
+            import json as _j, urllib.request
+            timeout = float(os.getenv("HOSTED_EMBED_TIMEOUT", "30"))
+            h = {"Content-Type": "application/json", "Authorization": "Bearer " + key}
+            if provider == "cohere":
+                url = os.getenv("COHERE_BASE_URL", "https://api.cohere.com").rstrip("/") + "/v2/embed"
+                payload = {"model": os.getenv("HOSTED_EMBEDDING_MODEL", "embed-english-v3.0"),
+                           "texts": list(texts),
+                           "input_type": os.getenv("HOSTED_EMBED_INPUT_TYPE", "search_document"),
+                           "embedding_types": ["float"]}
+                req = urllib.request.Request(url, data=_j.dumps(payload).encode(), headers=h)
+                data = _j.loads(urllib.request.urlopen(req, timeout=timeout).read())
+                vecs = data["embeddings"]["float"]
+            else:  # jina (OpenAI-compatible embeddings schema)
+                url = "https://api.jina.ai/v1/embeddings"
+                payload = {"model": os.getenv("HOSTED_EMBEDDING_MODEL", "jina-embeddings-v3"),
+                           "input": list(texts)}
+                req = urllib.request.Request(url, data=_j.dumps(payload).encode(), headers=h)
+                data = _j.loads(urllib.request.urlopen(req, timeout=timeout).read())
+                vecs = [r["embedding"] for r in sorted(data["data"], key=lambda d: d.get("index", 0))]
+            return np.asarray(vecs)
+        except Exception as e:
+            log.warning("hosted embed unavailable (%s) — degrading", e)
+            return None
+
     def _embed(self, texts: List[str]):
         """Embed texts with THIS evaluator's model (self.embedding_model_name): remote Lightning
-        backend first (off-box, no OOM), local model only if USE_LOCAL_EMBEDDER. Returns a numpy
-        array or None (caller degrades to a neutral score)."""
+        backend first (off-box, no OOM), then a hosted API backstop (HOSTED_EMBED_PROVIDER), then a
+        local model only if USE_LOCAL_EMBEDDER. Returns a numpy array or None (caller degrades to a
+        neutral score)."""
         if not texts:
             return None
         remote = self._remote_embed(texts, model=self.embedding_model_name)
         if remote is not None and len(remote) == len(texts):
             return remote
+        # Hosted-API backstop: keeps relevance scoring real when the Studio is down (no torch needed).
+        hosted = self._hosted_embed(texts)
+        if hosted is not None and len(hosted) == len(texts):
+            return hosted
         emb = self._ensure_embedder()
         if emb is None:
             return None
