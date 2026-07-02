@@ -1,80 +1,135 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>RAGeval — demo</title>
+<meta name="theme-color" content="#070b16" />
+<title>RAGeval — LLMOps Observability</title>
+<meta name="description" content="RAGeval — drop-in LLMOps observability for RAG: relevance, groundedness, faithfulness, multi-judge consensus and cost tracking." />
 <style>
-  :root { --bg:#0d1117; --card:#161b22; --bd:#30363d; --tx:#e6edf3; --mut:#8b949e; --ac:#3b82f6; --ok:#22c55e; }
-  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--tx);
-    font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  .wrap { max-width:820px; margin:0 auto; padding:32px 20px 64px; }
-  h1 { font-size:1.6rem; margin:0 0 4px; } .sub { color:var(--mut); margin:0 0 24px; }
-  .card { background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:20px; margin-bottom:18px; }
-  label { display:block; font-size:.8rem; color:var(--mut); margin:12px 0 4px; text-transform:uppercase; letter-spacing:.04em; }
-  textarea,input { width:100%; background:#0d1117; color:var(--tx); border:1px solid var(--bd);
-    border-radius:8px; padding:10px; font:inherit; resize:vertical; }
-  textarea { min-height:64px; }
-  button { background:var(--ac); color:#fff; border:0; border-radius:8px; padding:11px 18px;
-    font:600 15px/1 inherit; cursor:pointer; margin-top:16px; } button:disabled { opacity:.5; cursor:wait; }
-  pre { background:#0d1117; border:1px solid var(--bd); border-radius:8px; padding:14px; overflow:auto; white-space:pre-wrap; }
-  .pill { display:inline-block; font-size:.72rem; padding:2px 8px; border-radius:999px; background:#1f2937; color:var(--mut); margin-left:8px; }
-  .pill.ok { background:#0f2e1b; color:var(--ok); }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:12px; margin-top:12px; }
-  .metric { background:#0d1117; border:1px solid var(--bd); border-radius:8px; padding:12px; text-align:center; }
-  .metric b { display:block; font-size:1.4rem; } .metric span { font-size:.72rem; color:var(--mut); }
-  a { color:var(--ac); }
+  :root{--bg:#070b16;--bg2:#0a1020;--surface:#0f1628;--border:rgba(125,155,215,.16);--border2:rgba(125,155,215,.28);
+    --text:#eaf1ff;--text2:#9fb0d0;--text3:#5f6f8e;--primary:#38bdf8;--cyan:#22d3ee;--ok:#2dd4bf;--bad:#fb7185;--warn:#fbbf24;--anomaly:#c084fc;
+    --grad:linear-gradient(120deg,#4f46e5 0%,#2563eb 45%,#22d3ee 100%);--gradline:linear-gradient(120deg,rgba(99,102,241,.5),rgba(34,211,238,.5));
+    --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;--r:14px;--sh:0 12px 32px rgba(2,6,18,.55);--ig:inset 0 1px 0 rgba(150,190,255,.06),inset 0 0 26px rgba(34,211,238,.035)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;color:var(--text);line-height:1.55;min-height:100vh;
+    background:radial-gradient(1100px 620px at 6% -12%,rgba(79,70,229,.16),transparent 60%),radial-gradient(960px 600px at 102% 2%,rgba(34,211,238,.11),transparent 55%),var(--bg);-webkit-font-smoothing:antialiased}
+  a{color:var(--primary);text-decoration:none}
+  .wrap{max-width:1120px;margin:0 auto;padding:34px 22px 60px}
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .mark{filter:drop-shadow(0 4px 14px rgba(34,211,238,.45))}
+  .brand{font-family:'Space Grotesk',Inter,sans-serif;font-weight:700;font-size:1.7rem;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;letter-spacing:-.02em}
+  .sub{color:var(--text3);font-size:.72rem;text-transform:uppercase;letter-spacing:.14em}
+  .spacer{flex:1}
+  .badge{display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--border2);border-radius:999px;font-size:.78rem;color:var(--text2)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--text3)}.dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(45,212,191,.18)}.dot.bad{background:var(--bad)}
+  .lead{color:var(--text2);font-size:1.02rem;margin:14px 0 24px;max-width:680px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:18px}
+  .kpi{position:relative;overflow:hidden;padding:16px 18px;border-radius:var(--r);background:linear-gradient(180deg,var(--surface),#0d1424) padding-box,var(--border2) border-box;border:1px solid transparent;box-shadow:var(--sh),var(--ig)}
+  .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad);opacity:.6}
+  .kpi .k{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text3)}
+  .kpi .v{font-family:var(--mono);font-size:1.7rem;font-weight:700;margin-top:4px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px}
+  .card{position:relative;background:linear-gradient(180deg,var(--surface),#0d1424) padding-box,var(--gradline) border-box;border:1px solid transparent;border-radius:var(--r);padding:20px 22px;box-shadow:var(--sh),var(--ig)}
+  .card.wide{grid-column:1/-1}
+  .card::after{content:'';position:absolute;top:-1px;right:-1px;width:22px;height:22px;pointer-events:none;border-top:2px solid var(--cyan);border-right:2px solid var(--cyan);border-top-right-radius:var(--r);opacity:.32;-webkit-mask:linear-gradient(225deg,#000 0 42%,transparent 42%);mask:linear-gradient(225deg,#000 0 42%,transparent 42%)}
+  .card h2{font-family:'Space Grotesk',Inter,sans-serif;font-size:1.02rem;display:flex;align-items:center;gap:9px;margin-bottom:14px}
+  .card h2 .i{color:var(--cyan)}
+  label{display:block;font-size:.78rem;font-weight:600;color:var(--text2);margin:10px 0 6px}
+  textarea,input{width:100%;padding:10px 13px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:.88rem;font-family:inherit}
+  textarea{resize:vertical;min-height:60px}textarea:focus,input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(56,189,248,.16)}
+  button{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;padding:10px 18px;border:0;border-radius:10px;background:var(--grad);color:#04121f;font-weight:700;font-size:.88rem;cursor:pointer;box-shadow:0 4px 14px rgba(45,140,235,.35);transition:.15s}
+  button:hover{filter:brightness(1.08);transform:translateY(-1px)}button:disabled{opacity:.55;cursor:not-allowed}
+  table{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:4px}
+  th{text-align:left;color:var(--text3);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;border-bottom:1px solid var(--border)}
+  td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text2)}
+  tr:last-child td{border-bottom:0}
+  .out{margin-top:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:13px;font-family:var(--mono);font-size:.78rem;color:var(--text2);white-space:pre-wrap;max-height:300px;overflow:auto;display:none}.out.show{display:block}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.72rem;font-family:var(--mono)}
+  .muted{color:var(--text3)}
+  footer{margin-top:40px;color:var(--text3);font-size:.8rem;text-align:center}
+  .spin{width:14px;height:14px;border:2px solid rgba(4,18,31,.4);border-top-color:#04121f;border-radius:50%;display:inline-block;animation:s .7s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>RAGeval <span id="health" class="pill">checking…</span></h1>
-  <p class="sub">Score a RAG answer for faithfulness, relevance & groundedness (multi-judge). Self-hosted LLMOps.</p>
+  <header>
+    <svg class="mark" width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset=".5" stop-color="#2563eb"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+      <path d="M20 3.4 33.3 11V26L20 33.6 6.7 26V11Z" stroke="url(#g)" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M20 3.4V18M20 18 6.7 11M20 18l13.3-7" stroke="url(#g)" stroke-width="1.3" opacity=".45"/>
+      <path d="M20 27V13.4M14.4 19 20 13.4 25.6 19" stroke="url(#g)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div><div class="brand">RAGeval</div><div class="sub">LLMOps Observability for RAG</div></div>
+    <div class="spacer"></div>
+    <span class="badge"><span class="dot" id="hdot"></span><span id="hstat">checking…</span></span>
+  </header>
+  <p class="lead">Drop-in observability for RAG systems: relevance, groundedness and faithfulness scoring,
+    multi-judge consensus, cost tracking and hallucination alerts — self-hosted, SQLite by default.</p>
 
-  <div class="card">
-    <label>Question</label>
-    <textarea id="q">What is the capital of France?</textarea>
-    <label>Answer (to evaluate)</label>
-    <textarea id="a">Paris is the capital of France.</textarea>
-    <label>Context (one source per line)</label>
-    <textarea id="c">France is a country in Western Europe; its capital and largest city is Paris.</textarea>
-    <button id="go" onclick="score()">Score answer</button>
+  <div class="kpis">
+    <div class="kpi"><div class="k">Queries logged</div><div class="v" id="mQueries">—</div></div>
+    <div class="kpi"><div class="k">Avg relevance</div><div class="v" id="mRel">—</div></div>
+    <div class="kpi"><div class="k">Avg groundedness</div><div class="v" id="mGnd">—</div></div>
+    <div class="kpi"><div class="k">Avg faithfulness</div><div class="v" id="mFth">—</div></div>
+    <div class="kpi"><div class="k">Flagged</div><div class="v" id="mFlag" style="color:var(--anomaly)">—</div></div>
+    <div class="kpi"><div class="k">Total cost</div><div class="v" id="mCost">—</div></div>
   </div>
 
-  <div class="card" id="out" style="display:none">
-    <div class="grid" id="metrics"></div>
-    <label style="margin-top:18px">Raw response</label>
-    <pre id="raw"></pre>
+  <div class="grid">
+    <section class="card wide">
+      <h2><span class="i">✦</span> Score an interaction</h2>
+      <label for="sQ">Query</label><textarea id="sQ">What was Q3 revenue?</textarea>
+      <label for="sA">Answer</label><textarea id="sA">Q3 revenue was $3.6M, up 12% year over year.</textarea>
+      <label for="sC">Context chunks (one per line)</label><textarea id="sC">Q3 revenue reached $3.6M, a 12% increase over Q2.
+Gross margin held at 61%.</textarea>
+      <button id="sBtn" onclick="doScore()">Score</button>
+      <div class="out" id="sOut"></div>
+    </section>
+
+    <section class="card">
+      <h2><span class="i">⚑</span> Hallucination alerts</h2>
+      <div id="alerts" class="muted">Loading…</div>
+    </section>
+
+    <section class="card">
+      <h2><span class="i">◷</span> Recent queries</h2>
+      <div id="queries" class="muted">Loading…</div>
+    </section>
   </div>
-  <p class="sub">API: <code>POST /eval/score</code> · metrics: <a href="/eval/metrics">/eval/metrics</a> · <a href="/docs">OpenAPI docs</a></p>
+
+  <footer>RAGeval · <a href="/docs">API docs</a> · <a href="/health">health</a> · <a href="https://pypi.org/project/omnismart-rageval/">pip install omnismart-rageval</a></footer>
 </div>
 <script>
-async function health(){
-  try { const r = await fetch('/health'); const j = await r.json();
-    const el = document.getElementById('health');
-    el.textContent = j.status || 'ok'; el.className = 'pill ok';
-  } catch(e){ document.getElementById('health').textContent = 'offline'; }
+const $=id=>document.getElementById(id);
+const pct=v=>v==null?'—':Math.round(v*100)+'%';
+document.querySelectorAll('button').forEach(b=>b.dataset.label=b.textContent);
+function busy(b,on,l){b.disabled=on;b.innerHTML=on?'<span class="spin"></span> '+(l||'Working…'):b.dataset.label}
+function show(el,t){el.textContent=typeof t==='string'?t:JSON.stringify(t,null,2);el.classList.add('show')}
+async function j(u,o){const r=await fetch(u,o);return r.json()}
+
+async function load(){
+  try{const h=await fetch('/health');$('hdot').className='dot '+(h.ok?'ok':'bad');$('hstat').textContent=h.ok?'online':'offline'}catch{$('hdot').className='dot bad';$('hstat').textContent='offline'}
+  try{const m=await j('/eval/metrics');
+    $('mQueries').textContent=m.total_queries??0;$('mRel').textContent=pct(m.avg_relevance);
+    $('mGnd').textContent=pct(m.avg_groundedness);$('mFth').textContent=pct(m.avg_faithfulness);}catch{}
+  try{const c=await j('/eval/cost-report');let tot=0;for(const d in (c.daily_costs||{}))tot+=c.daily_costs[d];
+    $('mCost').textContent='$'+tot.toFixed(4);}catch{}
+  try{const a=await j('/eval/alerts');$('mFlag').textContent=a.flagged_count??0;
+    const rows=(a.alerts||[]).slice(0,6).map(x=>`<tr><td>${(x.query||'').slice(0,46)}</td><td><span class="pill" style="background:rgba(192,132,252,.16);color:var(--anomaly)">${x.groundedness!=null?pct(x.groundedness):'flag'}</span></td></tr>`).join('');
+    $('alerts').innerHTML=rows?`<table><thead><tr><th>Query</th><th>Groundedness</th></tr></thead><tbody>${rows}</tbody></table>`:'<span class="muted">No alerts 🎉</span>';}catch{$('alerts').textContent='—'}
+  try{const q=await j('/eval/queries');const list=Array.isArray(q)?q:(q.queries||[]);
+    const rows=list.slice(0,7).map(x=>`<tr><td>${(x.query||'').slice(0,40)}</td><td>${x.relevance!=null?pct(x.relevance):'—'}</td><td>${x.groundedness!=null?pct(x.groundedness):'—'}</td></tr>`).join('');
+    $('queries').innerHTML=rows?`<table><thead><tr><th>Query</th><th>Rel</th><th>Gnd</th></tr></thead><tbody>${rows}</tbody></table>`:'<span class="muted">No queries yet</span>';}catch{$('queries').textContent='—'}
 }
-async function score(){
-  const btn = document.getElementById('go'); btn.disabled = true; btn.textContent = 'Scoring…';
-  const body = {
-    query: document.getElementById('q').value,
-    answer: document.getElementById('a').value,
-    contexts: document.getElementById('c').value.split('\n').map(s=>s.trim()).filter(Boolean),
-  };
-  try {
-    const r = await fetch('/eval/score', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    const j = await r.json();
-    document.getElementById('out').style.display = 'block';
-    document.getElementById('raw').textContent = JSON.stringify(j, null, 2);
-    const keys = ['faithfulness','relevance','groundedness','answer_relevance','context_precision','cost_usd'];
-    const m = document.getElementById('metrics'); m.innerHTML = '';
-    keys.forEach(k => { if (k in j) { const v = j[k];
-      m.innerHTML += `<div class="metric"><b>${typeof v==='number'?(k==='cost_usd'?'$'+v.toFixed(4):v.toFixed(2)):v}</b><span>${k}</span></div>`; }});
-  } catch(e){ document.getElementById('out').style.display='block'; document.getElementById('raw').textContent = 'Error: '+e; }
-  btn.disabled = false; btn.textContent = 'Score answer';
-}
-health();
+load();
+
+async function doScore(){const b=$('sBtn');busy(b,true,'Scoring…');
+  try{const contexts=$('sC').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    const res=await j('/eval/score',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query:$('sQ').value,answer:$('sA').value,contexts})});
+    show($('sOut'),res);load();}
+  catch(e){show($('sOut'),'Request failed: '+e)}finally{busy(b,false)}}
 </script>
 </body>
 </html>
