@@ -179,14 +179,29 @@ class RAGEvaluator:
             return None
         return np.asarray(emb.encode(texts))
 
+    @staticmethod
+    def _tokens(s: str) -> set:
+        import re
+        return {w for w in re.findall(r"[a-z0-9$%.]+", (s or "").lower()) if len(w) > 1}
+
+    @classmethod
+    def _lexical_sim(cls, a: str, b: str) -> float:
+        """Overlap coefficient — share of a's tokens covered by b. Stdlib-only fallback
+        used when no embedder is reachable, so the scorers stay useful without torch."""
+        ta, tb = cls._tokens(a), cls._tokens(b)
+        if not ta or not tb:
+            return 0.0
+        return len(ta & tb) / len(ta)
+
     def score_retrieval_relevance(self, query: str, chunks: List[str]) -> float:
         """Mean cosine(query, retrieved chunks) — embeds off-box via the Lightning backend.
-        Returns 0.0 (neutral) when no embedder is available rather than crashing."""
+        Falls back to a lexical-overlap score when no embedder is available (so a base
+        ``pip install`` returns a meaningful number instead of a silent 0.0)."""
         if not chunks:
             return 0.0
         vecs = self._embed([query] + chunks)
         if vecs is None or len(vecs) != len(chunks) + 1:
-            return 0.0
+            return round(statistics.mean(self._lexical_sim(query, c) for c in chunks), 4)
         sims = cosine_similarity(vecs[:1], vecs[1:])[0]
         return float(np.mean(sims))
 
@@ -242,7 +257,8 @@ class RAGEvaluator:
             return 0.0
         vecs = self._embed(chunks + sentences)  # one call: [chunks..., sentences...]
         if vecs is None or len(vecs) != len(chunks) + len(sentences):
-            return 0.0
+            # Lexical fallback: mean over sentences of the best token-overlap with any chunk.
+            return round(statistics.mean(max(self._lexical_sim(s, c) for c in chunks) for s in sentences), 4)
         chunk_vecs = vecs[:len(chunks)]
         sent_vecs = vecs[len(chunks):]
         sims = cosine_similarity(sent_vecs, chunk_vecs)
