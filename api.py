@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -45,6 +46,15 @@ except RuntimeError:
     log.warning("demo/ directory not found — /demo will not be served")
 
 evaluator = RAGEvaluator()
+
+
+@app.get("/", include_in_schema=False)
+async def dashboard():
+    """Serve the accessible RAGeval dashboard at the root."""
+    import os
+    path = os.path.join(os.path.dirname(__file__), "demo", "index.html")
+    return FileResponse(path) if os.path.exists(path) else {"service": "rageval", "docs": "/docs"}
+
 
 # Initialize DB on import
 try:
