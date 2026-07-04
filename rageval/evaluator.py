@@ -205,10 +205,13 @@ class RAGEvaluator:
         sims = cosine_similarity(vecs[:1], vecs[1:])[0]
         return float(np.mean(sims))
 
-    async def _judge_groundedness(self, answer: str, context: str, model: str) -> float:
-        """One LLM judge call. Returns float 0-1."""
+    async def _judge_groundedness(self, answer: str, context: str, model: str) -> Optional[float]:
+        """One LLM judge call. Returns a float 0-1, or ``None`` when the judge is unavailable
+        (LiteLLM missing, or the provider errors — e.g. a model whose API key isn't set). A
+        ``None`` judge is SKIPPED by the consensus rather than counted, so an unconfigured judge
+        (say OpenAI before you add the key) never pollutes the score or triggers false review flags."""
         if not _LITELLM:
-            return 0.5  # stub
+            return None  # judge unavailable → skip (do not inject a fake 0.5)
         try:
             resp = await acompletion(
                 model=model,
@@ -223,28 +226,33 @@ class RAGEvaluator:
                 }],
                 temperature=0.0,
             )
-            content = (resp.choices[0].message.content or "0.5").strip()
+            content = (resp.choices[0].message.content or "").strip()
             # Extract the first float in the response
             import re
             m = re.search(r"[01]?\.\d+|\d", content)
-            return float(m.group()) if m else 0.5
+            return float(m.group()) if m else None
         except Exception as e:
-            log.warning("judge %s failed: %s", model, e)
-            return 0.5
+            # Missing API key / provider error → treat as an unavailable judge (skip), not 0.5.
+            log.warning("judge %s unavailable (skipped): %s", model, e)
+            return None
 
     async def score_groundedness_consensus(self, answer: str, context: str) -> Dict[str, Any]:
-        """Multi-judge consensus across configured JUDGE_MODELS."""
+        """Multi-judge consensus across the JUDGE_MODELS that are actually reachable. Judges whose
+        provider key isn't configured are skipped, so the score reflects only real votes."""
         scores: List[Dict[str, Any]] = []
         for model in settings.JUDGE_MODELS:
             s = await self._judge_groundedness(answer, context, model=model)
-            scores.append({"model": model, "score": s})
+            if s is not None:                       # skip unavailable/unconfigured judges
+                scores.append({"model": model, "score": s})
         nums = [s["score"] for s in scores]
         stdev = statistics.stdev(nums) if len(nums) > 1 else 0.0
         return {
             "consensus": statistics.mean(nums) if nums else 0.0,
             "stdev": stdev,
             "judges": scores,
-            "flag_for_review": stdev > 0.2,
+            "judges_used": len(scores),
+            # Only flag disagreement when at least two real judges voted.
+            "flag_for_review": len(nums) > 1 and stdev > 0.2,
         }
 
     def score_faithfulness(self, answer: str, chunks: List[str]) -> float:
