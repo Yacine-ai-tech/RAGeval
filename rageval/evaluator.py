@@ -227,10 +227,11 @@ class RAGEvaluator:
                 temperature=0.0,
             )
             content = (resp.choices[0].message.content or "").strip()
-            # Extract the first float in the response
+            # Parse the score: prefer a DECIMAL (0.85 / 1.0) — the actual score format — so we
+            # don't grab the leading "0" from prose like "on a 0-1 scale". Fall back to a bare 0/1.
             import re
-            m = re.search(r"[01]?\.\d+|\d", content)
-            return float(m.group()) if m else None
+            m = re.search(r"(?<![.\d])(?:0?\.\d+|1\.0+)(?![.\d])", content) or re.search(r"\b[01]\b", content)
+            return max(0.0, min(1.0, float(m.group()))) if m else None
         except Exception as e:
             # Missing API key / provider error → treat as an unavailable judge (skip), not 0.5.
             log.warning("judge %s unavailable (skipped): %s", model, e)
