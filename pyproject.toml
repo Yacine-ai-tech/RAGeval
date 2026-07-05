@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 # PyPI distribution name (the bare "rageval" is blocked as too-similar to an existing project).
 # The Python import name stays `rageval` (e.g. `pip install omnismart-rageval` -> `import rageval`).
 name = "omnismart-rageval"
-version = "0.1.5"
+version = "0.1.6"
 description = "Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus."
 readme = "README.md"
 license = {text = "MIT"}
