@@ -26,7 +26,11 @@ except ImportError:
     log.warning("sklearn / numpy not installed — embedding scorers stub")
 
 try:
+    import litellm
     from litellm import acompletion
+    # Drop provider-unsupported params instead of erroring — e.g. GPT-5 models reject
+    # temperature=0.0 (only 1 is allowed), which otherwise makes the OpenAI judge fail.
+    litellm.drop_params = True
     _LITELLM = True
 except ImportError:
     _LITELLM = False
