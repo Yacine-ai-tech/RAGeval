@@ -78,6 +78,7 @@ class ScoreRequest(BaseModel):
     query: str
     answer: str
     chunks: List[str] = []
+    contexts: List[str] = []   # accepted alias for `chunks` (clients use either name)
     tokens_used: int = 0
     latency_ms: float = 0.0
     model: str = "groq/llama-3.3-70b-versatile"
@@ -117,7 +118,7 @@ async def eval_log(req: LogRequest) -> Dict[str, Any]:
 @app.post("/eval/score")
 async def eval_score(req: ScoreRequest) -> Dict[str, Any]:
     return await evaluator.score_interaction(
-        query=req.query, answer=req.answer, chunks=req.chunks,
+        query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
         tokens_used=req.tokens_used, latency_ms=req.latency_ms,
         model=req.model, persona=req.persona,
     )
