@@ -33,7 +33,7 @@ class _Settings:
     JUDGE_MODELS = [
         m.strip() for m in os.getenv(
             "JUDGE_MODELS",
-            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,openai/gpt-5-mini",
+            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,gemini/gemini-1.5-flash",
         ).split(",") if m.strip()
     ]
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")
