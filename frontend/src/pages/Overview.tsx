@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { Activity, CircleDollarSign, Clock3, Database, Flag, Target, ShieldCheck } from "lucide-react";
+import { Activity, ArrowRight, CircleDollarSign, Clock3, Database, Flag, Target, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../kit/AppShell";
 import { Card, Chip, EmptyState, Skeleton, StatTile } from "../kit/primitives";
@@ -37,8 +37,8 @@ export default function Overview() {
   return (
     <div>
       <PageHeader
-        title="What production AI would you like to inspect today?"
-        sub="Live quality, cost and reliability of every tracked RAG interaction — scored by real multi-judge evaluation."
+        title="Overview"
+        sub="Quality, cost and reliability of every tracked RAG interaction, scored by the multi-judge evaluation pipeline."
         actions={
           <Select
             value={days}
@@ -94,7 +94,7 @@ export default function Overview() {
           <EmptyState
             title="No tracked interactions yet"
             hint="Score one on the Evaluate page or instrument your RAG app with the @track decorator."
-            action={<Link className="text-sm underline decoration-dotted text-dim hover:text-body" to="/evaluate">Open Evaluate →</Link>}
+            action={<Link className="text-sm underline decoration-dotted text-dim hover:text-body" to="/evaluate" style={{display:"inline-flex",alignItems:"center",gap:4}}>Open Evaluate <ArrowRight size={12} /></Link>}
           />
         ) : (
           <div className="h-[300px]">
