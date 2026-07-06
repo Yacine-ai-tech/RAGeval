@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2 } from "lucide-react";
+import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark } from "lucide-react";
 import { AppShell } from "./kit/AppShell";
 import { WakingBackend } from "./kit/misc";
 import { Skeleton } from "./kit/primitives";
@@ -10,15 +10,21 @@ import Evaluate from "./pages/Evaluate";
 import Experiments from "./pages/Experiments";
 import Alerts from "./pages/Alerts";
 import Instrumentation from "./pages/Instrumentation";
+import Traces from "./pages/Traces";
+import Models from "./pages/Models";
+import Saved from "./pages/Saved";
 
 const Overview = lazy(() => import("./pages/Overview"));
 const Cost = lazy(() => import("./pages/Cost"));
 
 const NAV = [
   { to: "/", label: "Overview", icon: Gauge },
-  { to: "/queries", label: "Queries & Traces", icon: ListTree },
+  { to: "/queries", label: "Queries", icon: ListTree },
+  { to: "/traces", label: "Live Traces", icon: RadioTower },
   { to: "/evaluate", label: "Evaluate", icon: FlaskConical },
   { to: "/experiments", label: "Experiments", icon: Beaker },
+  { to: "/saved", label: "Saved", icon: Bookmark },
+  { to: "/models", label: "Models", icon: Boxes },
   { to: "/cost", label: "Cost", icon: CircleDollarSign },
   { to: "/alerts", label: "Alerts", icon: BellRing },
   { to: "/instrumentation", label: "Instrumentation", icon: Code2 },
@@ -52,6 +58,9 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Overview />} />
               <Route path="/queries" element={<Queries />} />
+              <Route path="/traces" element={<Traces />} />
+              <Route path="/models" element={<Models />} />
+              <Route path="/saved" element={<Saved />} />
               <Route path="/evaluate" element={<Evaluate />} />
               <Route path="/experiments" element={<Experiments />} />
               <Route path="/cost" element={<Cost />} />
