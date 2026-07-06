@@ -33,7 +33,7 @@ class Settings:
     JUDGE_MODELS = [
         m.strip() for m in os.getenv(
             "JUDGE_MODELS",
-            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,openai/gpt-5-mini,gemini/gemini-2.5-flash",
+            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,gemini/gemini-1.5-flash",
         ).split(",") if m.strip()
     ]
 
