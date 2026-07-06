@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Check, FlaskConical, Save, AlertTriangle, Scale, UserRoundCheck } from "lucide-react";
+import { Bookmark, Check, FlaskConical, Save, AlertTriangle, Scale, UserRoundCheck } from "lucide-react";
 import { PageHeader } from "../kit/AppShell";
 import { Button, Card, Chip, EmptyState } from "../kit/primitives";
 import { ExecutionStages, Label } from "../kit/misc";
 import { JSONViewer } from "../kit/JSONViewer";
-import { api, Scores, scoreTone } from "../lib/api";
+import { api, saveEval, Scores, scoreTone } from "../lib/api";
 
 const SAMPLE = {
   query: "What was Q3 revenue and how did gross margin move?",
@@ -22,6 +22,7 @@ export default function Evaluate() {
   const [persona, setPersona] = useState("");
   const [busy, setBusy] = useState(false);
   const [logged, setLogged] = useState(false);
+  const [saved2, setSaved2] = useState(false);
   const [result, setResult] = useState<Scores | null>(null);
   const [err, setErr] = useState("");
 
@@ -92,9 +93,14 @@ export default function Evaluate() {
           title="Evaluation result"
           actions={
             result && (
-              <Button variant="secondary" onClick={logIt} disabled={busy || logged}>
-                {logged ? <Check size={13} className="text-ok" /> : <Save size={13} />} {logged ? "Logged" : "Log interaction"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" onClick={() => { saveEval({ ts: Date.now(), label: query.slice(0, 70) || "evaluation", payload: payload(), scores: result }); setSaved2(true); setTimeout(() => setSaved2(false), 1400); }}>
+                  {saved2 ? <Check size={13} className="text-ok" /> : <Bookmark size={13} />} {saved2 ? "Saved" : "Save"}
+                </Button>
+                <Button variant="secondary" onClick={logIt} disabled={busy || logged}>
+                  {logged ? <Check size={13} className="text-ok" /> : <Save size={13} />} {logged ? "Logged" : "Log interaction"}
+                </Button>
+              </div>
             )
           }
         >
