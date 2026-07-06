@@ -89,8 +89,18 @@ const post = (body: unknown) => ({
   body: JSON.stringify(body),
 });
 
+export type EvalEvent = { ts: string; kind: string; [k: string]: unknown };
+export type EvalConfig = {
+  judge_models: string[];
+  embedding_model: string | null;
+  disagreement_stdev_threshold: number;
+  review_flags: string[];
+};
+
 export const api = {
   health: () => req<{ status: string }>("/health"),
+  events: (limit = 100) => req<{ events: EvalEvent[]; capacity: number }>(`/eval/events?limit=${limit}`),
+  config: () => req<EvalConfig>("/eval/config"),
   metrics: (days = 7) => req<Metrics>(`/eval/metrics?days=${days}`),
   queries: (limit = 50, needsReview?: boolean) =>
     req<QueryRow[]>(
@@ -124,4 +134,17 @@ export function parseFlags(row: QueryRow): string[] {
 export function scoreTone(v: number | null | undefined): "ok" | "warn" | "bad" | "default" {
   if (v == null) return "default";
   return v >= 0.75 ? "ok" : v >= 0.5 ? "warn" : "bad";
+}
+
+/* ---------- saved & pinned evaluations (local, v1 "saved evaluations" ask) ---------- */
+export type SavedEval = { ts: number; label: string; payload: ScorePayload; scores: Scores };
+const SAVED = "rageval.saved";
+export function saveEval(e: SavedEval) {
+  const list: SavedEval[] = JSON.parse(localStorage.getItem(SAVED) ?? "[]");
+  list.unshift(e);
+  localStorage.setItem(SAVED, JSON.stringify(list.slice(0, 40)));
+}
+export function readSaved(): SavedEval[] { try { return JSON.parse(localStorage.getItem(SAVED) ?? "[]"); } catch { return []; } }
+export function deleteSaved(ts: number) {
+  localStorage.setItem(SAVED, JSON.stringify(readSaved().filter((e) => e.ts !== ts)));
 }
