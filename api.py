@@ -47,6 +47,16 @@ except RuntimeError:
 
 evaluator = RAGEvaluator()
 
+# In-memory telemetry ring — real events emitted by the evaluation pipeline (v1 "Live
+# Traces"/observability ask). Process-local by design; /eval/events exposes it.
+from collections import deque as _deque
+from datetime import datetime as _dt
+
+_EVENTS: "_deque[Dict[str, Any]]" = _deque(maxlen=200)
+
+def _emit(kind: str, **detail: Any) -> None:
+    _EVENTS.appendleft({"ts": _dt.utcnow().isoformat() + "Z", "kind": kind, **detail})
+
 
 @app.get("/", include_in_schema=False)
 async def dashboard():
@@ -110,22 +120,49 @@ async def health() -> Dict[str, Any]:
 
 @app.post("/eval/log")
 async def eval_log(req: LogRequest) -> Dict[str, Any]:
+    _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona)
     scores = await evaluator.score_interaction(
         query=req.query, answer=req.answer, chunks=req.chunks,
         tokens_used=req.tokens_used, latency_ms=req.latency_ms,
         model=req.model, persona=req.persona,
     )
     await log_interaction(req.query, req.answer, req.persona, scores, req.session_id)
+    c = scores.get("groundedness_consensus", {})
+    _emit("interaction.scored", route="/eval/log", overall=scores.get("overall_quality"),
+          judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=True)
     return scores
 
 
 @app.post("/eval/score")
 async def eval_score(req: ScoreRequest) -> Dict[str, Any]:
-    return await evaluator.score_interaction(
+    _emit("interaction.received", route="/eval/score", query=req.query[:120], persona=req.persona)
+    scores = await evaluator.score_interaction(
         query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
         tokens_used=req.tokens_used, latency_ms=req.latency_ms,
         model=req.model, persona=req.persona,
     )
+    c = scores.get("groundedness_consensus", {})
+    _emit("interaction.scored", route="/eval/score", overall=scores.get("overall_quality"),
+          judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=False)
+    return scores
+
+
+@app.get("/eval/events")
+async def eval_events(limit: int = 100) -> Dict[str, Any]:
+    """Live telemetry: the most recent evaluation-pipeline events (in-memory ring)."""
+    return {"events": list(_EVENTS)[:limit], "capacity": _EVENTS.maxlen}
+
+
+@app.get("/eval/config")
+async def eval_config() -> Dict[str, Any]:
+    """Factual evaluator configuration (no secrets): judges, embedding model, thresholds."""
+    return {
+        "judge_models": settings.JUDGE_MODELS,
+        "embedding_model": getattr(settings, "EMBEDDING_MODEL", None),
+        "disagreement_stdev_threshold": 0.2,
+        "review_flags": ["LOW_RETRIEVAL_RELEVANCE", "POTENTIAL_HALLUCINATION",
+                          "HIGH_LATENCY", "JUDGE_DISAGREEMENT", "PERSONA_SCOPE_VIOLATION"],
+    }
 
 
 @app.get("/eval/metrics")
