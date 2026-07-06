@@ -33,7 +33,7 @@ class Settings:
     JUDGE_MODELS = [
         m.strip() for m in os.getenv(
             "JUDGE_MODELS",
-            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,openai/gpt-5-mini",
+            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,openai/gpt-5-mini,gemini/gemini-2.5-flash",
         ).split(",") if m.strip()
     ]
 
@@ -42,6 +42,7 @@ class Settings:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 
 settings = Settings()
