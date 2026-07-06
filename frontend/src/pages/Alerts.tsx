@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BellRing, RefreshCw } from "lucide-react";
+import { ArrowRight, BellRing, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../kit/AppShell";
 import { Button, Card, Chip, EmptyState, Skeleton } from "../kit/primitives";
@@ -33,7 +33,7 @@ export default function Alerts() {
         <div className="space-y-3">
           <div className="text-[13px] text-dim">
             <span className="num font-semibold text-body">{data.flagged_count}</span> flagged total — showing the {data.alerts.length} most recent.{" "}
-            <Link to="/queries" className="underline decoration-dotted hover:text-body">Open full query log →</Link>
+            <Link to="/queries" className="inline-flex items-center gap-1 underline decoration-dotted hover:text-body">Open full query log <ArrowRight size={12} /></Link>
           </div>
           {data.alerts.map((r) => {
             const flags = parseFlags(r);

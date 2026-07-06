@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { FlaskConical, Save, AlertTriangle, Scale, UserRoundCheck } from "lucide-react";
+import { Check, FlaskConical, Save, AlertTriangle, Scale, UserRoundCheck } from "lucide-react";
 import { PageHeader } from "../kit/AppShell";
 import { Button, Card, Chip, EmptyState } from "../kit/primitives";
 import { ExecutionStages, Label } from "../kit/misc";
@@ -93,7 +93,7 @@ export default function Evaluate() {
           actions={
             result && (
               <Button variant="secondary" onClick={logIt} disabled={busy || logged}>
-                <Save size={13} /> {logged ? "Logged ✓" : "Log interaction"}
+                {logged ? <Check size={13} className="text-ok" /> : <Save size={13} />} {logged ? "Logged" : "Log interaction"}
               </Button>
             )
           }
@@ -145,8 +145,7 @@ function ResultView({ r }: { r: Scores }) {
         </div>
         {c.judges.length === 0 ? (
           <div className="rounded-xl border border-line bg-surface-2 p-3.5 text-[13px] text-dim">
-            No judge providers reachable from this deployment — consensus reflects zero votes, and that is
-            reported honestly rather than fabricated.
+            No judge providers are configured on this deployment; the consensus reflects zero recorded votes.
           </div>
         ) : (
           <div className="grid gap-2 sm:grid-cols-3">
