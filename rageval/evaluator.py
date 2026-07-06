@@ -53,6 +53,35 @@ OPENAI_PRICES = {
     "openai/gpt-5-mini": (0.15, 0.60),
 }
 
+# ── Persona scope awareness ──────────────────────────────────────────────────
+# Which business domains each persona is allowed to speak to (mirrors the persona
+# RBAC used by IntelAI / the omnismart-personas package). Used to catch when, e.g.,
+# a CFO response surfaces People/HR figures it shouldn't. Personas not listed here
+# are treated as unrestricted (no scope flag).
+PERSONA_DOMAINS: Dict[str, set] = {
+    "cfo": {"finance", "growth"},
+    "chro": {"people", "esg"},
+    "hr": {"people", "esg"},
+    "cto": {"it", "operations", "finance"},
+    "coo": {"operations", "logistics", "growth", "people"},
+    "esg": {"esg", "operations", "people"},
+    "risk": {"finance", "operations", "esg", "it"},
+    "ceo": {"finance", "growth", "operations", "people", "esg", "it", "logistics"},
+}
+# Signature terms that mark a piece of content as belonging to a business domain.
+DOMAIN_TERMS: Dict[str, tuple] = {
+    "finance": ("revenue", "margin", "gross margin", "ebitda", "cash runway", "burn rate",
+                "profit", "net income", "arr", "mrr", "cash flow", "opex", "capex"),
+    "people": ("headcount", "attrition", "turnover", "hiring", "recruit", "absenteeism",
+               "employee", "training completion", "engagement score", "payroll"),
+    "it": ("uptime", "incident", "deployment frequency", "mttr", "vulnerabilit",
+           "security posture", "latency", "sla", "ticket"),
+    "operations": ("throughput", "defect rate", "oee", "production", "quality", "safety incident"),
+    "logistics": ("inventory", "shipment", "on-time delivery", "supplier", "lead time", "stockout"),
+    "esg": ("emissions", "co2", "carbon", "diversity", "sustainability", "governance score"),
+    "growth": ("cac", "ltv", "conversion rate", "churn", "nrr", "pipeline", "win rate"),
+}
+
 
 class RAGEvaluator:
     """Multi-judge consensus evaluator with cost tracking and persona awareness."""
@@ -289,6 +318,31 @@ class RAGEvaluator:
         output_toks = tokens * (1 - input_ratio)
         return (input_toks * in_price + output_toks * out_price) / 1_000_000
 
+    @staticmethod
+    def _persona_scope_flags(answer: str, persona: Optional[str]) -> List[str]:
+        """Persona awareness: return the out-of-scope business domains a persona's answer
+        surfaced *data* for (e.g. a CFO reply quoting a headcount / attrition figure →
+        ['people']). Only sentences that carry an actual number count as "pulling data", so
+        a polite decline ("headcount is the CHRO's domain") is NOT flagged. Personas without
+        a defined scope, or empty answers, return []."""
+        if not persona or not answer:
+            return []
+        allowed = PERSONA_DOMAINS.get(persona.strip().lower())
+        if not allowed:
+            return []
+        import re
+        offending: set = set()
+        for sent in re.split(r"(?<=[.!?])\s+|\n", answer):
+            s = sent.lower()
+            if not re.search(r"\d", s):  # no figure → a mention, not a data pull
+                continue
+            for dom, terms in DOMAIN_TERMS.items():
+                if dom in allowed:
+                    continue
+                if any(term in s for term in terms):
+                    offending.add(dom)
+        return sorted(offending)
+
     async def score_interaction(
         self,
         query: str,
@@ -317,6 +371,13 @@ class RAGEvaluator:
         if consensus["flag_for_review"]:
             flags.append("JUDGE_DISAGREEMENT")
 
+        # Persona awareness — flag when a scoped persona (e.g. CFO) surfaces figures from a
+        # domain it shouldn't (e.g. People/HR headcount). This is the claim RAGeval makes:
+        # "catches when your CFO response pulls data it shouldn't."
+        scope_violations = self._persona_scope_flags(answer, persona)
+        if scope_violations:
+            flags.append("PERSONA_SCOPE_VIOLATION")
+
         return {
             "relevance": relevance,
             "groundedness": groundedness,
@@ -327,6 +388,7 @@ class RAGEvaluator:
             "tokens_used": tokens_used,
             "model": model,
             "persona": persona,
+            "persona_scope_violations": scope_violations,
             "overall_quality": overall_quality,
             "flags": flags,
             "needs_review": bool(flags),
