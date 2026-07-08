@@ -70,17 +70,31 @@ export type ScorePayload = {
   persona?: string | null;
 };
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = await res.json();
-      detail = body.detail ?? JSON.stringify(body);
-    } catch { /* keep statusText */ }
-    throw new Error(`${res.status}: ${detail}`);
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function req<T>(path: string, init?: RequestInit, retryCount = 0): Promise<T> {
+  try {
+    const res = await fetch(path, init);
+    if (!res.ok) {
+      if (res.status >= 500 && retryCount < 5) {
+        await delay(2000 * (retryCount + 1));
+        return req<T>(path, init, retryCount + 1);
+      }
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        detail = body.detail ?? JSON.stringify(body);
+      } catch { /* keep statusText */ }
+      throw new Error(`${res.status}: ${detail}`);
+    }
+    return res.json() as Promise<T>;
+  } catch (e) {
+    if (retryCount < 5) {
+      await delay(2000 * (retryCount + 1));
+      return req<T>(path, init, retryCount + 1);
+    }
+    throw e;
   }
-  return res.json() as Promise<T>;
 }
 
 const post = (body: unknown) => ({
