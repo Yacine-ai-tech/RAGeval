@@ -263,7 +263,8 @@ class RAGEvaluator:
             # Parse the score: prefer a DECIMAL (0.85 / 1.0) — the actual score format — so we
             # don't grab the leading "0" from prose like "on a 0-1 scale". Fall back to a bare 0/1.
             import re
-            m = re.search(r"(?<![.\d])(?:0?\.\d+|1\.0+)(?![.\d])", content) or re.search(r"\b[01]\b", content)
+            clean = content.replace("0.0-1.0", "").replace("0=hallucinated", "").replace("1=fully grounded", "")
+            m = re.search(r"(?<![.\d])(?:0?\.\d+|1\.0+)(?![.\d])", clean) or re.search(r"\b[01]\b", clean)
             return max(0.0, min(1.0, float(m.group()))) if m else None
         except Exception as e:
             # Missing API key / provider error → treat as an unavailable judge (skip), not 0.5.
