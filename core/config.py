@@ -20,7 +20,7 @@ class Settings:
     LOGS_DIR = str(LOGS_DIR)
 
     # CORS: comma-separated allowed origins. Empty -> "*" (dev). Set in production.
-    CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 
     RAGEVAL_STORE = os.getenv("RAGEVAL_STORE", "sqlite")
     RAGEVAL_DB_PATH = os.getenv("RAGEVAL_DB_PATH", str(RAGEVAL_HOME / "rageval.db"))
@@ -42,6 +42,7 @@ class Settings:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 
 settings = Settings()

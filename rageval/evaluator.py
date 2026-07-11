@@ -26,7 +26,11 @@ except ImportError:
     log.warning("sklearn / numpy not installed — embedding scorers stub")
 
 try:
+    import litellm
     from litellm import acompletion
+    # Drop provider-unsupported params instead of erroring — e.g. GPT-5 models reject
+    # temperature=0.0 (only 1 is allowed), which otherwise makes the OpenAI judge fail.
+    litellm.drop_params = True
     _LITELLM = True
 except ImportError:
     _LITELLM = False
@@ -47,6 +51,35 @@ ANTHROPIC_PRICES = {
 OPENAI_PRICES = {
     "openai/gpt-5": (5.00, 15.00),
     "openai/gpt-5-mini": (0.15, 0.60),
+}
+
+# ── Persona scope awareness ──────────────────────────────────────────────────
+# Which business domains each persona is allowed to speak to (mirrors the persona
+# RBAC used by IntelAI / the omnismart-personas package). Used to catch when, e.g.,
+# a CFO response surfaces People/HR figures it shouldn't. Personas not listed here
+# are treated as unrestricted (no scope flag).
+PERSONA_DOMAINS: Dict[str, set] = {
+    "cfo": {"finance", "growth"},
+    "chro": {"people", "esg"},
+    "hr": {"people", "esg"},
+    "cto": {"it", "operations", "finance"},
+    "coo": {"operations", "logistics", "growth", "people"},
+    "esg": {"esg", "operations", "people"},
+    "risk": {"finance", "operations", "esg", "it"},
+    "ceo": {"finance", "growth", "operations", "people", "esg", "it", "logistics"},
+}
+# Signature terms that mark a piece of content as belonging to a business domain.
+DOMAIN_TERMS: Dict[str, tuple] = {
+    "finance": ("revenue", "margin", "gross margin", "ebitda", "cash runway", "burn rate",
+                "profit", "net income", "arr", "mrr", "cash flow", "opex", "capex"),
+    "people": ("headcount", "attrition", "turnover", "hiring", "recruit", "absenteeism",
+               "employee", "training completion", "engagement score", "payroll"),
+    "it": ("uptime", "incident", "deployment frequency", "mttr", "vulnerabilit",
+           "security posture", "latency", "sla", "ticket"),
+    "operations": ("throughput", "defect rate", "oee", "production", "quality", "safety incident"),
+    "logistics": ("inventory", "shipment", "on-time delivery", "supplier", "lead time", "stockout"),
+    "esg": ("emissions", "co2", "carbon", "diversity", "sustainability", "governance score"),
+    "growth": ("cac", "ltv", "conversion rate", "churn", "nrr", "pipeline", "win rate"),
 }
 
 
@@ -122,35 +155,96 @@ class RAGEvaluator:
                 pass
         threading.Thread(target=_go, daemon=True).start()
 
+    def _hosted_embed(self, texts: List[str]):
+        """Hosted embeddings backstop (Cohere ``/v2/embed`` by default, Jina ``/v1/embeddings``
+        alternate) so retrieval scoring stays real when the on-demand Lightning Studio is unreachable
+        and torch isn't installed — survives on a 512MB host. Enabled by ``HOSTED_EMBED_PROVIDER``
+        (cohere|jina) + the provider's free, no-card key. Returns np.ndarray or None. This is a
+        graceful fallback: true multi-model embedding comparison still uses the Studio (this path
+        always uses the hosted model, not self.embedding_model_name). Stdlib urllib only."""
+        provider = os.getenv("HOSTED_EMBED_PROVIDER", "").strip().lower()
+        if provider not in ("cohere", "jina"):
+            return None
+        key = os.getenv("COHERE_API_KEY" if provider == "cohere" else "JINA_API_KEY", "").strip()
+        if not key:
+            return None
+        try:
+            import json as _j, urllib.request
+            timeout = float(os.getenv("HOSTED_EMBED_TIMEOUT", "30"))
+            h = {"Content-Type": "application/json", "Authorization": "Bearer " + key}
+            if provider == "cohere":
+                url = os.getenv("COHERE_BASE_URL", "https://api.cohere.com").rstrip("/") + "/v2/embed"
+                payload = {"model": os.getenv("HOSTED_EMBEDDING_MODEL", "embed-english-v3.0"),
+                           "texts": list(texts),
+                           "input_type": os.getenv("HOSTED_EMBED_INPUT_TYPE", "search_document"),
+                           "embedding_types": ["float"]}
+                req = urllib.request.Request(url, data=_j.dumps(payload).encode(), headers=h)
+                data = _j.loads(urllib.request.urlopen(req, timeout=timeout).read())
+                vecs = data["embeddings"]["float"]
+            else:  # jina (OpenAI-compatible embeddings schema)
+                url = "https://api.jina.ai/v1/embeddings"
+                payload = {"model": os.getenv("HOSTED_EMBEDDING_MODEL", "jina-embeddings-v3"),
+                           "input": list(texts)}
+                req = urllib.request.Request(url, data=_j.dumps(payload).encode(), headers=h)
+                data = _j.loads(urllib.request.urlopen(req, timeout=timeout).read())
+                vecs = [r["embedding"] for r in sorted(data["data"], key=lambda d: d.get("index", 0))]
+            return np.asarray(vecs)
+        except Exception as e:
+            log.warning("hosted embed unavailable (%s) — degrading", e)
+            return None
+
     def _embed(self, texts: List[str]):
         """Embed texts with THIS evaluator's model (self.embedding_model_name): remote Lightning
-        backend first (off-box, no OOM), local model only if USE_LOCAL_EMBEDDER. Returns a numpy
-        array or None (caller degrades to a neutral score)."""
+        backend first (off-box, no OOM), then a hosted API backstop (HOSTED_EMBED_PROVIDER), then a
+        local model only if USE_LOCAL_EMBEDDER. Returns a numpy array or None (caller degrades to a
+        neutral score)."""
         if not texts:
             return None
         remote = self._remote_embed(texts, model=self.embedding_model_name)
         if remote is not None and len(remote) == len(texts):
             return remote
+        # Hosted-API backstop: keeps relevance scoring real when the Studio is down (no torch needed).
+        hosted = self._hosted_embed(texts)
+        if hosted is not None and len(hosted) == len(texts):
+            return hosted
         emb = self._ensure_embedder()
         if emb is None:
             return None
         return np.asarray(emb.encode(texts))
 
+    @staticmethod
+    def _tokens(s: str) -> set:
+        import re
+        return {w for w in re.findall(r"[a-z0-9$%.]+", (s or "").lower()) if len(w) > 1}
+
+    @classmethod
+    def _lexical_sim(cls, a: str, b: str) -> float:
+        """Overlap coefficient — share of a's tokens covered by b. Stdlib-only fallback
+        used when no embedder is reachable, so the scorers stay useful without torch."""
+        ta, tb = cls._tokens(a), cls._tokens(b)
+        if not ta or not tb:
+            return 0.0
+        return len(ta & tb) / len(ta)
+
     def score_retrieval_relevance(self, query: str, chunks: List[str]) -> float:
         """Mean cosine(query, retrieved chunks) — embeds off-box via the Lightning backend.
-        Returns 0.0 (neutral) when no embedder is available rather than crashing."""
+        Falls back to a lexical-overlap score when no embedder is available (so a base
+        ``pip install`` returns a meaningful number instead of a silent 0.0)."""
         if not chunks:
             return 0.0
         vecs = self._embed([query] + chunks)
         if vecs is None or len(vecs) != len(chunks) + 1:
-            return 0.0
+            return round(statistics.mean(self._lexical_sim(query, c) for c in chunks), 4)
         sims = cosine_similarity(vecs[:1], vecs[1:])[0]
         return float(np.mean(sims))
 
-    async def _judge_groundedness(self, answer: str, context: str, model: str) -> float:
-        """One LLM judge call. Returns float 0-1."""
+    async def _judge_groundedness(self, answer: str, context: str, model: str) -> Optional[float]:
+        """One LLM judge call. Returns a float 0-1, or ``None`` when the judge is unavailable
+        (LiteLLM missing, or the provider errors — e.g. a model whose API key isn't set). A
+        ``None`` judge is SKIPPED by the consensus rather than counted, so an unconfigured judge
+        (say OpenAI before you add the key) never pollutes the score or triggers false review flags."""
         if not _LITELLM:
-            return 0.5  # stub
+            return None  # judge unavailable → skip (do not inject a fake 0.5)
         try:
             resp = await acompletion(
                 model=model,
@@ -165,28 +259,35 @@ class RAGEvaluator:
                 }],
                 temperature=0.0,
             )
-            content = (resp.choices[0].message.content or "0.5").strip()
-            # Extract the first float in the response
+            content = (resp.choices[0].message.content or "").strip()
+            # Parse the score: prefer a DECIMAL (0.85 / 1.0) — the actual score format — so we
+            # don't grab the leading "0" from prose like "on a 0-1 scale". Fall back to a bare 0/1.
             import re
-            m = re.search(r"[01]?\.\d+|\d", content)
-            return float(m.group()) if m else 0.5
+            clean = content.replace("0.0-1.0", "").replace("0=hallucinated", "").replace("1=fully grounded", "")
+            m = re.search(r"(?<![.\d])(?:0?\.\d+|1\.0+)(?![.\d])", clean) or re.search(r"\b[01]\b", clean)
+            return max(0.0, min(1.0, float(m.group()))) if m else None
         except Exception as e:
-            log.warning("judge %s failed: %s", model, e)
-            return 0.5
+            # Missing API key / provider error → treat as an unavailable judge (skip), not 0.5.
+            log.warning("judge %s unavailable (skipped): %s", model, e)
+            return None
 
     async def score_groundedness_consensus(self, answer: str, context: str) -> Dict[str, Any]:
-        """Multi-judge consensus across configured JUDGE_MODELS."""
+        """Multi-judge consensus across the JUDGE_MODELS that are actually reachable. Judges whose
+        provider key isn't configured are skipped, so the score reflects only real votes."""
         scores: List[Dict[str, Any]] = []
         for model in settings.JUDGE_MODELS:
             s = await self._judge_groundedness(answer, context, model=model)
-            scores.append({"model": model, "score": s})
+            if s is not None:                       # skip unavailable/unconfigured judges
+                scores.append({"model": model, "score": s})
         nums = [s["score"] for s in scores]
         stdev = statistics.stdev(nums) if len(nums) > 1 else 0.0
         return {
             "consensus": statistics.mean(nums) if nums else 0.0,
             "stdev": stdev,
             "judges": scores,
-            "flag_for_review": stdev > 0.2,
+            "judges_used": len(scores),
+            # Only flag disagreement when at least two real judges voted.
+            "flag_for_review": len(nums) > 1 and stdev > 0.2,
         }
 
     def score_faithfulness(self, answer: str, chunks: List[str]) -> float:
@@ -199,7 +300,8 @@ class RAGEvaluator:
             return 0.0
         vecs = self._embed(chunks + sentences)  # one call: [chunks..., sentences...]
         if vecs is None or len(vecs) != len(chunks) + len(sentences):
-            return 0.0
+            # Lexical fallback: mean over sentences of the best token-overlap with any chunk.
+            return round(statistics.mean(max(self._lexical_sim(s, c) for c in chunks) for s in sentences), 4)
         chunk_vecs = vecs[:len(chunks)]
         sent_vecs = vecs[len(chunks):]
         sims = cosine_similarity(sent_vecs, chunk_vecs)
@@ -216,6 +318,31 @@ class RAGEvaluator:
         input_toks = tokens * input_ratio
         output_toks = tokens * (1 - input_ratio)
         return (input_toks * in_price + output_toks * out_price) / 1_000_000
+
+    @staticmethod
+    def _persona_scope_flags(answer: str, persona: Optional[str]) -> List[str]:
+        """Persona awareness: return the out-of-scope business domains a persona's answer
+        surfaced *data* for (e.g. a CFO reply quoting a headcount / attrition figure →
+        ['people']). Only sentences that carry an actual number count as "pulling data", so
+        a polite decline ("headcount is the CHRO's domain") is NOT flagged. Personas without
+        a defined scope, or empty answers, return []."""
+        if not persona or not answer:
+            return []
+        allowed = PERSONA_DOMAINS.get(persona.strip().lower())
+        if not allowed:
+            return []
+        import re
+        offending: set = set()
+        for sent in re.split(r"(?<=[.!?])\s+|\n", answer):
+            s = sent.lower()
+            if not re.search(r"\d", s):  # no figure → a mention, not a data pull
+                continue
+            for dom, terms in DOMAIN_TERMS.items():
+                if dom in allowed:
+                    continue
+                if any(term in s for term in terms):
+                    offending.add(dom)
+        return sorted(offending)
 
     async def score_interaction(
         self,
@@ -245,6 +372,13 @@ class RAGEvaluator:
         if consensus["flag_for_review"]:
             flags.append("JUDGE_DISAGREEMENT")
 
+        # Persona awareness — flag when a scoped persona (e.g. CFO) surfaces figures from a
+        # domain it shouldn't (e.g. People/HR headcount). This is the claim RAGeval makes:
+        # "catches when your CFO response pulls data it shouldn't."
+        scope_violations = self._persona_scope_flags(answer, persona)
+        if scope_violations:
+            flags.append("PERSONA_SCOPE_VIOLATION")
+
         return {
             "relevance": relevance,
             "groundedness": groundedness,
@@ -255,6 +389,7 @@ class RAGEvaluator:
             "tokens_used": tokens_used,
             "model": model,
             "persona": persona,
+            "persona_scope_violations": scope_violations,
             "overall_quality": overall_quality,
             "flags": flags,
             "needs_review": bool(flags),

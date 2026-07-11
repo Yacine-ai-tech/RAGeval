@@ -7,7 +7,7 @@ import json
 import os
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -84,7 +84,7 @@ async def log_interaction(
             VALUES (?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?)
             """,
             (
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
                 query, answer, persona, scores.get("model"),
                 scores.get("relevance"), scores.get("groundedness"), scores.get("faithfulness"),
                 scores.get("cost_usd"), scores.get("latency_ms"), scores.get("tokens_used"),

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -46,6 +47,29 @@ except RuntimeError:
 
 evaluator = RAGEvaluator()
 
+# In-memory telemetry ring — real events emitted by the evaluation pipeline (v1 "Live
+# Traces"/observability ask). Process-local by design; /eval/events exposes it.
+from collections import deque as _deque
+from datetime import datetime as _dt
+
+_EVENTS: "_deque[Dict[str, Any]]" = _deque(maxlen=200)
+
+def _emit(kind: str, **detail: Any) -> None:
+    _EVENTS.appendleft({"ts": _dt.utcnow().isoformat() + "Z", "kind": kind, **detail})
+
+
+@app.get("/", include_in_schema=False)
+async def dashboard():
+    """Serve the accessible RAGeval dashboard at the root."""
+    import os
+    root = os.path.dirname(__file__)
+    spa = os.path.join(root, "frontend", "dist", "index.html")
+    if os.path.exists(spa):
+        return FileResponse(spa)
+    path = os.path.join(root, "demo", "index.html")
+    return FileResponse(path) if os.path.exists(path) else {"service": "rageval", "docs": "/docs"}
+
+
 # Initialize DB on import
 try:
     init_rageval_table()
@@ -68,6 +92,7 @@ class ScoreRequest(BaseModel):
     query: str
     answer: str
     chunks: List[str] = []
+    contexts: List[str] = []   # accepted alias for `chunks` (clients use either name)
     tokens_used: int = 0
     latency_ms: float = 0.0
     model: str = "groq/llama-3.3-70b-versatile"
@@ -95,22 +120,49 @@ async def health() -> Dict[str, Any]:
 
 @app.post("/eval/log")
 async def eval_log(req: LogRequest) -> Dict[str, Any]:
+    _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona)
     scores = await evaluator.score_interaction(
         query=req.query, answer=req.answer, chunks=req.chunks,
         tokens_used=req.tokens_used, latency_ms=req.latency_ms,
         model=req.model, persona=req.persona,
     )
     await log_interaction(req.query, req.answer, req.persona, scores, req.session_id)
+    c = scores.get("groundedness_consensus", {})
+    _emit("interaction.scored", route="/eval/log", overall=scores.get("overall_quality"),
+          judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=True)
     return scores
 
 
 @app.post("/eval/score")
 async def eval_score(req: ScoreRequest) -> Dict[str, Any]:
-    return await evaluator.score_interaction(
-        query=req.query, answer=req.answer, chunks=req.chunks,
+    _emit("interaction.received", route="/eval/score", query=req.query[:120], persona=req.persona)
+    scores = await evaluator.score_interaction(
+        query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
         tokens_used=req.tokens_used, latency_ms=req.latency_ms,
         model=req.model, persona=req.persona,
     )
+    c = scores.get("groundedness_consensus", {})
+    _emit("interaction.scored", route="/eval/score", overall=scores.get("overall_quality"),
+          judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=False)
+    return scores
+
+
+@app.get("/eval/events")
+async def eval_events(limit: int = 100) -> Dict[str, Any]:
+    """Live telemetry: the most recent evaluation-pipeline events (in-memory ring)."""
+    return {"events": list(_EVENTS)[:limit], "capacity": _EVENTS.maxlen}
+
+
+@app.get("/eval/config")
+async def eval_config() -> Dict[str, Any]:
+    """Factual evaluator configuration (no secrets): judges, embedding model, thresholds."""
+    return {
+        "judge_models": settings.JUDGE_MODELS,
+        "embedding_model": getattr(settings, "EMBEDDING_MODEL", None),
+        "disagreement_stdev_threshold": 0.2,
+        "review_flags": ["LOW_RETRIEVAL_RELEVANCE", "POTENTIAL_HALLUCINATION",
+                          "HIGH_LATENCY", "JUDGE_DISAGREEMENT", "PERSONA_SCOPE_VIOLATION"],
+    }
 
 
 @app.get("/eval/metrics")
@@ -157,3 +209,20 @@ async def embedding_comparison(req: EmbeddingComparisonRequest) -> Dict[str, Any
         scores = [ev.score_retrieval_relevance(q, cs) for q, cs in zip(req.queries, req.chunks)]
         results[model] = sum(scores) / max(len(scores), 1)
     return {"results": results, "best": max(results, key=results.get) if results else None}
+
+
+# ─── SPA serving (registered last so every API route above wins) ─────────────
+# The redesigned frontend (frontend/dist) is served same-origin; unknown GET paths
+# fall back to index.html for client-side routing.
+import os as _os
+
+_DIST = _os.path.join(_os.path.dirname(__file__), "frontend", "dist")
+if _os.path.isdir(_os.path.join(_DIST, "assets")):
+    app.mount("/assets", StaticFiles(directory=_os.path.join(_DIST, "assets")), name="spa_assets")
+
+    @app.get("/{spa_path:path}", include_in_schema=False)
+    async def spa_fallback(spa_path: str):
+        candidate = _os.path.join(_DIST, spa_path)
+        if spa_path and _os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return FileResponse(_os.path.join(_DIST, "index.html"))

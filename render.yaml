@@ -1,0 +1,26 @@
+# Render Blueprint — disaster-recovery / one-click redeploy (e.g. if the Railway credit runs out).
+# Render builds from ./Dockerfile (honors $PORT) and health-checks /health. No secrets here:
+# every key is `sync: false` (Render prompts in the dashboard).
+# To run on Render free (512MB) without OOM, keep torch off-box: rely on the Studio embed backend
+# and/or set HOSTED_EMBED_PROVIDER=cohere (no local sentence-transformers). Leave USE_LOCAL_EMBEDDER unset.
+services:
+  - type: web
+    name: rageval
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    plan: free
+    autoDeploy: false
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: JUDGE_MODELS          # multi-judge consensus, e.g. anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile
+        sync: false
+      - key: HOSTED_EMBED_PROVIDER # cohere|jina — off-Studio embeddings backstop (see .env.example)
+        sync: false
+      - key: COHERE_API_KEY        # free, no-card key for the embeddings backstop
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
