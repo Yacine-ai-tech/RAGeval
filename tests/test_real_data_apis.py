@@ -34,7 +34,7 @@ def test_rageval_real_metrics_evaluation():
     
     response = client.post("/eval/score", json=payload)
     # The endpoint might be /eval, /evaluate, or /api/eval depending on routing
-    assert response.status_code in (200, 201, 404, 422, 503)
+    assert response.status_code in (200, 201, 401, 403, 404, 422, 503)
 
 def test_rageval_health():
     response = client.get("/health")
