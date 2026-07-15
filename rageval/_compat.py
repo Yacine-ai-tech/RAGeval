@@ -16,6 +16,7 @@ RAGEVAL_HOME = Path(os.getenv("RAGEVAL_HOME", str(Path.home() / ".rageval")))
 try:
     RAGEVAL_HOME.mkdir(parents=True, exist_ok=True)
 except Exception:  # pragma: no cover - read-only home, etc.
+    import logging; logging.error('Unhandled exception', exc_info=True)
     pass
 
 
