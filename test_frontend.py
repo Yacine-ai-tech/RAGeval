@@ -19,4 +19,5 @@ try:
     response = client.post("/eval/score", json=payload)
     print(response.json())
 except Exception as e:
+    import logging; logging.error(f'Error: {e}', exc_info=True)
     print(e)

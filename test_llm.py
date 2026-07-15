@@ -16,6 +16,7 @@ async def main():
             )
             print(f"{model} returned: {resp.choices[0].message.content}")
         except Exception as e:
+            import logging; logging.error(f'Error: {e}', exc_info=True)
             print(f"{model} error: {e}")
 
 asyncio.run(main())
