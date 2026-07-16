@@ -1,13 +1,14 @@
 # RAGeval
 
-[![CI](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml/badge.svg)](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml/badge.svg)](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 [![PyPI](https://img.shields.io/pypi/v/omnismart-rageval.svg)](https://pypi.org/project/omnismart-rageval/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 **Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
 > 🔗 **Live demo:** https://rageval.ysiddo-ai-projects.app/demo/  ·  browser dashboard (score a query + view metrics).  Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
 > On-demand backend (first request ~30–60 s to wake).
+> Self-hosting: see [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## The 60-Second Pitch
 
@@ -90,3 +91,28 @@ def chain_invoke(query: str, context_chunks: list[str]):
 ## License
 
 MIT
+
+## ⚖️ License & Enterprise Use (Dual-License)
+
+This project is open-source under the **AGPL-3.0 License**. It is completely free for researchers, students, and open-source hobbyists.
+
+> **Commercial Use:** The AGPLv3 license requires that any proprietary network service (SaaS, internal corporate tools) that uses or modifies this code must also open-source its entire backend. 
+> 
+> If you wish to use this framework in a closed-source commercial environment, or require **Enterprise features** (SSO, Active Directory, Custom VPC Deployment, Strict RBAC), you must obtain a **Commercial License**. 
+> Please reach out to discuss commercial licensing and integration consulting.
+
+## 📡 Anonymous Telemetry
+This project collects anonymous, GDPR-compliant startup pings to help the author understand usage volume and prioritize development. 
+* **What is collected:** Only the project name and a "startup" event timestamp. No PII, no API keys, no user data.
+* **How to disable:** We respect your privacy. To opt-out, simply set `TELEMETRY_OPT_OUT=true` in your `.env` file.
+
+
+<!-- Scarf Analytics Pixel -->
+<img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=a8deecd4-e42d-4498-a1b0-208aacf89a40" />
+
+## Licensing
+This project is licensed under the [AGPL-3.0 License](LICENSE).
+
+**Commercial Use:** If you wish to use this software commercially without releasing your own source code, please see [COMMERCIAL.md](COMMERCIAL.md) to obtain a commercial license.
+
+**Telemetry:** See [TELEMETRY.md](TELEMETRY.md) for our privacy-first data practices.

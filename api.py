@@ -25,6 +25,11 @@ from pydantic import BaseModel
 
 from core.config import settings
 from core.logger import get_logger
+
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
 from rageval.evaluator import RAGEvaluator
 from rageval.store import (
     get_cost_report,
@@ -37,6 +42,49 @@ from rageval.store import (
 log = get_logger(__name__)
 
 app = FastAPI(title="RAGeval", version="0.1.0", description="Drop-in LLMOps observability.")
+
+# --- ETHICAL TELEMETRY ---
+import threading
+import requests
+import os
+import logging
+
+def _send_telemetry():
+    if os.environ.get("TELEMETRY_OPT_OUT", "").lower() in ("1", "true", "yes"):
+        return
+    try:
+        logging.info("📡 Anonymous usage telemetry is ENABLED. This helps us understand project usage.")
+        logging.info("📡 To disable this, set the environment variable TELEMETRY_OPT_OUT=true.")
+        requests.post(
+            "https://gateway.ysiddo-ai-projects.app/telemetry", 
+            json={"service": "RAGeval", "event": "startup"},
+            timeout=2
+        )
+    except Exception:
+        pass
+
+threading.Thread(target=_send_telemetry, daemon=True).start()
+# -------------------------
+
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import os as _os
+
+@app.middleware("http")
+async def verify_internal_token(request: Request, call_next):
+    # Allow health checks and public auth routes
+    if request.url.path in ["/health", "/docs", "/openapi.json", "/api/redoc"] or request.url.path.startswith("/api/v1/auth/"):
+        return await call_next(request)
+        
+    token = request.headers.get("X-OmniIntel-Internal-Token")
+    expected_token = _os.environ.get("OMNIINTEL_INTERNAL_TOKEN", "default-dev-token")
+    
+    if token != expected_token and _os.environ.get("REQUIRE_INTERNAL_TOKEN", "true").lower() == "true":
+        return JSONResponse(status_code=403, content={"detail": "Missing or invalid X-OmniIntel-Internal-Token"})
+        
+    return await call_next(request)
+
 app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ALLOWED_ORIGINS or ["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
@@ -81,6 +129,7 @@ class LogRequest(BaseModel):
     query: str
     answer: str
     chunks: List[str] = []
+    contexts: List[str] = []   # accepted alias for `chunks`
     tokens_used: int = 0
     latency_ms: float = 0.0
     model: str = "groq/llama-3.3-70b-versatile"
@@ -122,7 +171,7 @@ async def health() -> Dict[str, Any]:
 async def eval_log(req: LogRequest) -> Dict[str, Any]:
     _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona)
     scores = await evaluator.score_interaction(
-        query=req.query, answer=req.answer, chunks=req.chunks,
+        query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
         tokens_used=req.tokens_used, latency_ms=req.latency_ms,
         model=req.model, persona=req.persona,
     )
@@ -211,18 +260,4 @@ async def embedding_comparison(req: EmbeddingComparisonRequest) -> Dict[str, Any
     return {"results": results, "best": max(results, key=results.get) if results else None}
 
 
-# ─── SPA serving (registered last so every API route above wins) ─────────────
-# The redesigned frontend (frontend/dist) is served same-origin; unknown GET paths
-# fall back to index.html for client-side routing.
-import os as _os
 
-_DIST = _os.path.join(_os.path.dirname(__file__), "frontend", "dist")
-if _os.path.isdir(_os.path.join(_DIST, "assets")):
-    app.mount("/assets", StaticFiles(directory=_os.path.join(_DIST, "assets")), name="spa_assets")
-
-    @app.get("/{spa_path:path}", include_in_schema=False)
-    async def spa_fallback(spa_path: str):
-        candidate = _os.path.join(_DIST, spa_path)
-        if spa_path and _os.path.isfile(candidate):
-            return FileResponse(candidate)
-        return FileResponse(_os.path.join(_DIST, "index.html"))
