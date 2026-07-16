@@ -48,3 +48,4 @@ rageval = "rageval.cli:main"
 
 [tool.setuptools]
 packages = ["rageval"]
+package-dir = {"" = "src"}
