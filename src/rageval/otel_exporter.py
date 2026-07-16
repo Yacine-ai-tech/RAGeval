@@ -56,4 +56,5 @@ def export_span(name: str, attrs: Dict[str, Any]) -> None:
             try:
                 span.set_attribute(k, v if isinstance(v, (str, int, float, bool)) else str(v))
             except Exception:
+                import logging; logging.error('Unhandled exception', exc_info=True)
                 pass
