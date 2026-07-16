@@ -152,6 +152,7 @@ class RAGEvaluator:
                 urllib.request.urlopen(urllib.request.Request(url.rstrip("/") + "/wake",
                     data=_j.dumps({"gpu": False}).encode(), headers=h), timeout=90)
             except Exception:
+                import logging; logging.error('Unhandled exception', exc_info=True)
                 pass
         threading.Thread(target=_go, daemon=True).start()
 
