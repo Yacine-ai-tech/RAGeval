@@ -13,6 +13,7 @@ import Instrumentation from "./pages/Instrumentation";
 import Traces from "./pages/Traces";
 import Models from "./pages/Models";
 import Saved from "./pages/Saved";
+import ApiDocs from "./pages/ApiDocs";
 
 const Overview = lazy(() => import("./pages/Overview"));
 const Cost = lazy(() => import("./pages/Cost"));
@@ -28,6 +29,7 @@ const NAV = [
   { to: "/cost", label: "Cost", icon: CircleDollarSign },
   { to: "/alerts", label: "Alerts", icon: BellRing },
   { to: "/instrumentation", label: "Instrumentation", icon: Code2 },
+  { to: "/api-docs", label: "API Docs", icon: Code2 },
 ];
 
 export default function App() {
@@ -66,6 +68,7 @@ export default function App() {
               <Route path="/cost" element={<Cost />} />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/instrumentation" element={<Instrumentation />} />
+              <Route path="/api-docs" element={<ApiDocs />} />
               <Route path="*" element={<Overview />} />
             </Routes>
           </Suspense>
