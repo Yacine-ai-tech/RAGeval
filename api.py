@@ -25,6 +25,11 @@ from pydantic import BaseModel
 
 from core.config import settings
 from core.logger import get_logger
+
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
 from rageval.evaluator import RAGEvaluator
 from rageval.store import (
     get_cost_report,
@@ -124,6 +129,7 @@ class LogRequest(BaseModel):
     query: str
     answer: str
     chunks: List[str] = []
+    contexts: List[str] = []   # accepted alias for `chunks`
     tokens_used: int = 0
     latency_ms: float = 0.0
     model: str = "groq/llama-3.3-70b-versatile"
@@ -165,7 +171,7 @@ async def health() -> Dict[str, Any]:
 async def eval_log(req: LogRequest) -> Dict[str, Any]:
     _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona)
     scores = await evaluator.score_interaction(
-        query=req.query, answer=req.answer, chunks=req.chunks,
+        query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
         tokens_used=req.tokens_used, latency_ms=req.latency_ms,
         model=req.model, persona=req.persona,
     )
