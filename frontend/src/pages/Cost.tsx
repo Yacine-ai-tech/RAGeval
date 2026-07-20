@@ -54,7 +54,7 @@ export default function Cost() {
           </div>
 
           <Card title="Daily cost" className="mt-5">
-            {daily.length === 0 ? (
+            {!Array.isArray(daily) || daily.length === 0 ? (
               <EmptyState title="No cost data yet" hint="Costs accumulate as interactions are logged with token usage." />
             ) : (
               <div className="h-[280px]">
