@@ -90,7 +90,7 @@ export default function Overview() {
         className="mt-5"
         actions={<Chip title="derived client-side from the real query log">query log</Chip>}
       >
-        {trend.length === 0 ? (
+        {!Array.isArray(trend) || trend.length === 0 ? (
           <EmptyState
             title="No tracked interactions yet"
             hint="Score one on the Evaluate page or instrument your RAG app with the @track decorator."

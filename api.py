@@ -93,6 +93,13 @@ try:  # browser demo UI (served by the backend, no separate deploy)
 except RuntimeError:
     log.warning("demo/ directory not found — /demo will not be served")
 
+try:
+    _assets_dir = _os.path.join(_os.path.dirname(__file__), "frontend", "dist", "assets")
+    if _os.path.exists(_assets_dir):
+        app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
+except Exception as e:
+    log.warning("assets mount failed: %s", e)
+
 evaluator = RAGEvaluator()
 
 # In-memory telemetry ring — real events emitted by the evaluation pipeline (v1 "Live
