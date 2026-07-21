@@ -9,7 +9,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 **Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
-> 🔗 **Live demo:** https://rageval.ysiddo-ai-projects.app/demo/  ·  browser dashboard (score a query + view metrics).  Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
+> 🔗 **Live dashboard:** https://rageval.ysiddo-ai-projects.app/  ·  browser dashboard (score a query + view metrics).  Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
 > On-demand backend (first request ~30–60 s to wake).
 > Self-hosting: see [SELF_HOSTING.md](SELF_HOSTING.md).
 
@@ -93,7 +93,7 @@ def chain_invoke(query: str, context_chunks: list[str]):
 
 ## License
 
-MIT
+AGPL-3.0
 
 ## ⚖️ License & Enterprise Use (Dual-License)
 
