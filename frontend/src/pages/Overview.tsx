@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import * as Recharts from "recharts";
+const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } = Recharts;
 import { Activity, ArrowRight, CircleDollarSign, Clock3, Database, Flag, Target, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../kit/AppShell";
