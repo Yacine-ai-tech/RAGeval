@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import * as Recharts from "recharts";
+const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = Recharts;
 import { CircleDollarSign } from "lucide-react";
 import { PageHeader } from "../kit/AppShell";
 import { Card, EmptyState, Skeleton, StatTile } from "../kit/primitives";
