@@ -50,7 +50,7 @@ That's it. Open the dashboard at `localhost:8003`.
 ## Quick Start
 
 ```bash
-pip install omnismart-rageval     # distribution name; CLI + import remain `rageval`
+pip install --index-url https://gateway.ysiddo-ai-projects.app/pypi/simple/ omnismart-rageval     # distribution name; CLI + import remain `rageval`
 rageval init                 # creates ~/.rageval/rageval.db
 rageval serve --port 8003
 ```
