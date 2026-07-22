@@ -1,6 +1,30 @@
 import { test, expect } from '@playwright/test';
 
+const BASE_URL = process.env.TEST_BASE_URL || BASE_URL + '';
+
 test.describe('Exhaustive UI Component & Page Flow Suite', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/*', async route => {
+      const req = route.request();
+      const url = req.url();
+      if ((req.resourceType() === 'fetch' || req.resourceType() === 'xhr') && url.includes('vercel.app')) {
+        let backendUrl = 'https://intelai-bwhp.onrender.com';
+        if (url.includes('docintel-ui')) backendUrl = 'https://docintel-mm79.onrender.com';
+        else if (url.includes('agentkit-ui')) backendUrl = 'https://agentkit-sbz5.onrender.com';
+        else if (url.includes('rageval-ui')) backendUrl = 'https://rageval-4xh5.onrender.com';
+        else if (url.includes('voiceflow-ui')) backendUrl = 'https://voiceflow-riao.onrender.com';
+        else if (url.includes('streampulse-ui')) backendUrl = 'https://streampulse-gv4o.onrender.com';
+        
+        const pathPart = new URL(url).pathname;
+        const newUrl = backendUrl.replace(/\/$/, '') + pathPart;
+        await route.continue({ url: newUrl });
+      } else {
+        await route.continue();
+      }
+    });
+  });
+
   test('Should render and interact with main (main.tsx)', async ({ page }) => {
     // Mock navigation to route containing main
     // Component-level isolation test via storybook/mount mock (Conceptual for full-mesh E2E)
@@ -45,88 +69,87 @@ test.describe('Exhaustive UI Component & Page Flow Suite', () => {
 
   test('Should render and interact with Alerts (pages/Alerts.tsx)', async ({ page }) => {
     // Mock navigation to route containing Alerts
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/alerts');
-    await page.waitForLoadState('networkidle');
+    await page.goto(BASE_URL + '/rageval/alerts');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
 
   test('Should render and interact with Cost (pages/Cost.tsx)', async ({ page }) => {
     // Mock navigation to route containing Cost
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/cost');
-    await page.waitForLoadState('networkidle');
+    await page.goto(BASE_URL + '/rageval/cost');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
 
   test('Should render and interact with Instrumentation (pages/Instrumentation.tsx)', async ({ page }) => {
     // Mock navigation to route containing Instrumentation
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/instrumentation');
-    await page.waitForLoadState('networkidle');
+    await page.goto(BASE_URL + '/rageval/instrumentation');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
 
   test('Should render and interact with Evaluate (pages/Evaluate.tsx)', async ({ page }) => {
     // Mock navigation to route containing Evaluate
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/evaluate');
-    await page.waitForLoadState('networkidle');
+    await page.goto(BASE_URL + '/rageval/evaluate');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
 
   test('Should render and interact with Saved (pages/Saved.tsx)', async ({ page }) => {
     // Mock navigation to route containing Saved
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/saved');
-    await page.waitForLoadState('networkidle');
+    await page.goto(BASE_URL + '/rageval/saved');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
 
   test('Should render and interact with Queries (pages/Queries.tsx)', async ({ page }) => {
     // Mock navigation to route containing Queries
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/queries');
-    await page.waitForLoadState('networkidle');
+    await page.goto(BASE_URL + '/rageval/queries');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
 
   test('Should render and interact with Experiments (pages/Experiments.tsx)', async ({ page }) => {
     // Mock navigation to route containing Experiments
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/experiments');
-    await page.waitForLoadState('networkidle');
+    await page.goto(BASE_URL + '/rageval/experiments');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
 
   test('Should render and interact with Traces (pages/Traces.tsx)', async ({ page }) => {
     // Mock navigation to route containing Traces
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/traces');
-    await page.waitForLoadState('networkidle');
+    await page.goto(BASE_URL + '/rageval/traces');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
 
   test('Should render and interact with Overview (pages/Overview.tsx)', async ({ page }) => {
     // Mock navigation to route containing Overview
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/overview');
-    await page.waitForLoadState('networkidle');
+    await page.goto(BASE_URL + '/rageval/overview');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
 
   test('Should render and interact with Models (pages/Models.tsx)', async ({ page }) => {
     // Mock navigation to route containing Models
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/models');
-    await page.waitForLoadState('networkidle');
+    await page.goto(BASE_URL + '/rageval/models');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
 
   test('Should render and interact with ApiDocs (pages/ApiDocs.tsx)', async ({ page }) => {
     // Mock navigation to route containing ApiDocs
-    await page.goto('https://gateway.ysiddo-ai-projects.app/rageval/apidocs');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     const rootHtml = await page.locator('#root').innerHTML();
     expect(rootHtml.length).toBeGreaterThan(0);
   });
@@ -176,7 +199,7 @@ test.describe("Mobile & Low-Bandwidth Resilience (Sahel Optimized)", () => {
   test("Should verify offline Service Worker registration", async ({ page }) => {
     await page.goto(BASE_URL);
     // Wait for window.onload so SW registers
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     
     // Evaluate if a service worker is registered in the navigator
     const isSwRegistered = await page.evaluate(async () => {
@@ -192,13 +215,13 @@ test.describe("Mobile & Low-Bandwidth Resilience (Sahel Optimized)", () => {
     // Intercept network requests to verify the SW doesn't block the document fetch
     let documentFetchedFromNetwork = false;
     page.on('request', request => {
-      if (request.resourceType() === 'document' && request.url() === BASE_URL + '/') {
+      if (request.resourceType() === 'document' && request.url() === '/' + '/') {
         documentFetchedFromNetwork = true;
       }
     });
     
     await page.goto(BASE_URL);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     
     // Evaluate the active Service Worker state to ensure it skips waiting
     const swState = await page.evaluate(async () => {

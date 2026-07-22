@@ -3,13 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
     <meta name="description" content="RAGeval — LLMOps observability for production RAG systems" />
     <title>RAGeval — LLMOps Observability</title>
-    <script type="module" crossorigin src="/assets/index-BjKR5hdP.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/motion-CKsw07PI.js">
-    <link rel="modulepreload" crossorigin href="/assets/charts-Dfe1oyhB.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-Bx2Ip5IM.css">
+  
+    <!-- Low-Bandwidth / Sahel Optimizations -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, shrink-to-fit=no" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+          }
+        });
+        });
+      }
+    </script>
+
+    <script type="module" crossorigin src="/assets/index-BRzw6QQX.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DwjHGtB7.css">
   </head>
   <body>
     <div id="root"></div>
