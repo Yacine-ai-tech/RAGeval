@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import * as Recharts from "recharts";
+const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } = Recharts;
 import { Activity, ArrowRight, CircleDollarSign, Clock3, Database, Flag, Target, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../kit/AppShell";
@@ -90,7 +91,7 @@ export default function Overview() {
         className="mt-5"
         actions={<Chip title="derived client-side from the real query log">query log</Chip>}
       >
-        {trend.length === 0 ? (
+        {!Array.isArray(trend) || trend.length === 0 ? (
           <EmptyState
             title="No tracked interactions yet"
             hint="Score one on the Evaluate page or instrument your RAG app with the @track decorator."
