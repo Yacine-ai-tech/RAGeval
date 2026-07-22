@@ -1,3 +1,5 @@
+import BenchmarkPage from './pages/BenchmarkPage';
+import ApiDocsPage from './pages/ApiDocsPage';
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark } from "lucide-react";
@@ -70,7 +72,9 @@ export default function App() {
               <Route path="/instrumentation" element={<Instrumentation />} />
               <Route path="/api-docs" element={<ApiDocs />} />
               <Route path="*" element={<Overview />} />
-            </Routes>
+                  <Route path="/benchmark" element={<BenchmarkPage />} />
+      <Route path="/api-docs" element={<ApiDocsPage />} />
+</Routes>
           </Suspense>
         )}
       </AppShell>

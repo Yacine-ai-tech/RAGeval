@@ -13,7 +13,7 @@ const AUTH_URL = process.env.INTELAI_API_URL || '/';
 
 async function getAuthToken(request: any): Promise<string> {
   const resp = await request.post(`${AUTH_URL}/api/login`, {
-    data: { username: 'admin', password = 'REDACTED' }
+    data: { username: 'admin', password: 'fLNtwDH2VaQLbO' }
   }).catch(() => null);
   if (resp && resp.ok()) {
     const body = await resp.json();
@@ -38,7 +38,7 @@ test.describe('Phase 5.1 — RAGeval UI Telemetry', () => {
       '/instrumentation', '/models', '/overview', '/queries', '/saved', '/traces'
     ];
     for (const route of routes) {
-      await page.goto(`${'/'}${route}`);
+      await page.goto(`${BASE_URL}${route}`);
       await page.waitForLoadState('domcontentloaded');
       await assertNoReactCrash(page);
       console.log(`✅ RAGeval ${route} — OK`);
