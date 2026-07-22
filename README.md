@@ -9,6 +9,8 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 **Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
+
+Version: **v0.1.10** | `pip install omnismart-rageval`
 > 🔗 **Live dashboard:** https://rageval.ysiddo-ai-projects.app/  ·  browser dashboard (score a query + view metrics).  Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
 > On-demand backend (first request ~30–60 s to wake).
 > Self-hosting: see [SELF_HOSTING.md](SELF_HOSTING.md).
@@ -30,7 +32,7 @@ That's it. Open the dashboard at `localhost:8003`.
 | Metric            | Definition                                                          |
 |-------------------|---------------------------------------------------------------------|
 | Retrieval relevance | Cosine sim between query and retrieved chunks (BGE-large by default) |
-| Groundedness consensus | Multi-judge LLM scoring (Claude Haiku + Groq Llama + GPT-5-mini), flags disagreement |
+| Groundedness consensus | Multi-judge LLM scoring (Claude Haiku 4.5 + Groq LLaMA 3.3 + GPT-5-mini), flags disagreement |
 | Faithfulness      | Per-sentence max-similarity to any chunk (NLI proxy)                |
 | Cost              | USD per interaction, tracked by model                               |
 | Latency           | End-to-end wall-clock                                               |
@@ -90,6 +92,14 @@ def chain_invoke(query: str, context_chunks: list[str]):
 | GET    | /eval/alerts                  | Recent flagged queries                   |
 | POST   | /eval/retrieval-bench         | A/B compare retrieval strategies         |
 | POST   | /eval/embedding-comparison    | Compare embedding models                 |
+
+## Tests
+
+38 test functions across smoke, API, evaluator, decorator, DSPy integration, store, and e2e:
+
+```bash
+pytest tests/ -q
+```
 
 ## License
 
