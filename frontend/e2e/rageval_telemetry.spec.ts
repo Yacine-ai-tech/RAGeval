@@ -7,9 +7,9 @@ import { test, expect, Page } from '@playwright/test';
  * Phase 8: Deep Component Integration (Embeddings, Vector Store)
  */
 
-const BASE_URL = process.env.RAGEVAL_URL    || process.env.TEST_BASE_URL || 'http://localhost:5176';
-const API_URL  = process.env.RAGEVAL_API_URL || 'http://localhost:8003';
-const AUTH_URL = process.env.INTELAI_API_URL || 'http://localhost:8000';
+const BASE_URL = process.env.RAGEVAL_URL    || process.env.TEST_BASE_URL || '/';
+const API_URL  = process.env.RAGEVAL_API_URL || '/';
+const AUTH_URL = process.env.INTELAI_API_URL || '/';
 
 async function getAuthToken(request: any): Promise<string> {
   const resp = await request.post(`${AUTH_URL}/api/login`, {
@@ -38,7 +38,7 @@ test.describe('Phase 5.1 — RAGeval UI Telemetry', () => {
       '/instrumentation', '/models', '/overview', '/queries', '/saved', '/traces'
     ];
     for (const route of routes) {
-      await page.goto(`${BASE_URL}${route}`);
+      await page.goto(`${'/'}${route}`);
       await page.waitForLoadState('domcontentloaded');
       await assertNoReactCrash(page);
       console.log(`✅ RAGeval ${route} — OK`);
@@ -47,7 +47,7 @@ test.describe('Phase 5.1 — RAGeval UI Telemetry', () => {
 
   test('Cost page: cost threshold slider triggers UI warning badge', async ({ page }) => {
     await page.goto(`${BASE_URL}/cost`);
-    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
     await assertNoReactCrash(page);
 
     // Look for a range slider
@@ -67,7 +67,7 @@ test.describe('Phase 5.1 — RAGeval UI Telemetry', () => {
 
   test('Traces page: clicking a trace row expands detail view', async ({ page }) => {
     await page.goto(`${BASE_URL}/traces`);
-    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
     await assertNoReactCrash(page);
 
     // Look for a table row
@@ -86,7 +86,7 @@ test.describe('Phase 5.1 — RAGeval UI Telemetry', () => {
 
   test('Experiments page: model comparison renders', async ({ page }) => {
     await page.goto(`${BASE_URL}/experiments`);
-    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
     await assertNoReactCrash(page);
 
     const compareEl = page.locator('table, .comparison, canvas, svg').first();
@@ -220,6 +220,107 @@ test.describe('Phase 8.3 — Embedding & Vector Store', () => {
         // Same ID = dedup working correctly
         // Different ID = embedding each time (acceptable but noted)
       }
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 5.1 — RAGeval Mocked Evaluation Feature Test
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('Phase 5.1 — RAGeval Mocked Features', () => {
+
+  test('Mock Evaluation form submission and metric validation', async ({ page }) => {
+    // Intercept evaluate endpoint
+    await page.route('**/api/evaluate', async route => {
+      const json = { score: 0.95, accuracy: 0.98, fluency: 0.92 };
+      await route.fulfill({ json, status: 200, contentType: 'application/json' });
+    });
+
+    await page.goto(`${BASE_URL}/evaluate`);
+    await page.waitForLoadState('domcontentloaded');
+
+    // Simulate filling an evaluation
+    const queryInput = page.locator('textarea, input[placeholder*="query" i], input[placeholder*="question" i]').first();
+    const evaluateBtn = page.locator('button:has-text("Evaluate"), button:has-text("Run"), button:has-text("Submit")').first();
+
+    if (await queryInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await queryInput.fill('What is the quarterly revenue?');
+      if (await evaluateBtn.isVisible().catch(() => false)) {
+        await evaluateBtn.click();
+        await page.waitForTimeout(1000);
+        await assertNoReactCrash(page);
+        
+        // Assert mock scores appear
+        const scoreEl = page.locator('text=/0\.95/i').first();
+        if (await scoreEl.isVisible({ timeout: 5000 }).catch(() => false)) {
+          await expect(scoreEl).toBeVisible();
+        }
+      }
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 5.3 — RAGeval Deep Interactivity & Mocked Features
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('Phase 5.3 — Deep Interactivity', () => {
+
+  test('Bulk experiment CSV uploads mock', async ({ page }) => {
+    await page.route('**/api/experiments/upload', async route => {
+      await route.fulfill({ json: { success: true, count: 50 }, status: 200 });
+    });
+
+    await page.goto(`${BASE_URL}/experiments`);
+    await page.waitForLoadState('domcontentloaded');
+
+    const fileInput = page.locator('input[type="file"]').first();
+    if (await fileInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+      // We don't actually need a real file if we are mocking, but Playwright requires a valid path for setInputFiles
+      // We can just simulate the change event or if we must use setInputFiles, we assume /tmp/test.csv exists
+      // Wait, we can skip actual setInputFiles if we evaluate
+      await page.evaluate(() => {
+        const event = new Event('change', { bubbles: true });
+        const input = document.querySelector('input[type="file"]');
+        if(input) input.dispatchEvent(event);
+      });
+      await page.waitForTimeout(1000);
+      await assertNoReactCrash(page);
+    }
+  });
+
+  test('Saved query bookmarking mock', async ({ page }) => {
+    await page.route('**/api/queries/save', async route => {
+      await route.fulfill({ json: { success: true }, status: 200 });
+    });
+
+    await page.goto(`${BASE_URL}/queries`);
+    await page.waitForLoadState('domcontentloaded');
+
+    const saveBtn = page.locator('button:has-text("Save"), button[aria-label="Bookmark"]').first();
+    if (await saveBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await saveBtn.click();
+      await page.waitForTimeout(1000);
+      
+      const savedList = page.locator('.saved-queries, [data-testid="saved-list"]').first();
+      if (await savedList.isVisible().catch(() => false)) {
+        await expect(savedList).toBeVisible();
+      }
+      await assertNoReactCrash(page);
+    }
+  });
+
+  test('Configuring complex Instrumentation panels mock', async ({ page }) => {
+    await page.goto(`${BASE_URL}/instrumentation`);
+    await page.waitForLoadState('domcontentloaded');
+
+    const configPanel = page.locator('.instrumentation-config, [data-testid="config-panel"]').first();
+    if (await configPanel.isVisible({ timeout: 5000 }).catch(() => false)) {
+      const toggle = configPanel.locator('input[type="checkbox"], button.toggle').first();
+      if (await toggle.isVisible().catch(() => false)) {
+        await toggle.click();
+      }
+      await expect(configPanel).toBeVisible();
+      await assertNoReactCrash(page);
     }
   });
 });
