@@ -9,7 +9,9 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 **Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
-> 🔗 **Live demo:** https://rageval.ysiddo-ai-projects.app/demo/  ·  browser dashboard (score a query + view metrics).  Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
+
+Version: **v0.1.10** | `pip install omnismart-rageval`
+> 🔗 **Live dashboard:** https://rageval.ysiddo-ai-projects.app/  ·  browser dashboard (score a query + view metrics).  Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
 > On-demand backend (first request ~30–60 s to wake).
 > Self-hosting: see [SELF_HOSTING.md](SELF_HOSTING.md).
 
@@ -30,7 +32,7 @@ That's it. Open the dashboard at `localhost:8003`.
 | Metric            | Definition                                                          |
 |-------------------|---------------------------------------------------------------------|
 | Retrieval relevance | Cosine sim between query and retrieved chunks (BGE-large by default) |
-| Groundedness consensus | Multi-judge LLM scoring (Claude Haiku + Groq Llama + GPT-5-mini), flags disagreement |
+| Groundedness consensus | Multi-judge LLM scoring (Claude Haiku 4.5 + Groq LLaMA 3.3 + GPT-5-mini), flags disagreement |
 | Faithfulness      | Per-sentence max-similarity to any chunk (NLI proxy)                |
 | Cost              | USD per interaction, tracked by model                               |
 | Latency           | End-to-end wall-clock                                               |
@@ -50,7 +52,7 @@ That's it. Open the dashboard at `localhost:8003`.
 ## Quick Start
 
 ```bash
-pip install omnismart-rageval     # distribution name; CLI + import remain `rageval`
+pip install --index-url https://gateway.ysiddo-ai-projects.app/pypi/simple/ omnismart-rageval     # distribution name; CLI + import remain `rageval`
 rageval init                 # creates ~/.rageval/rageval.db
 rageval serve --port 8003
 ```
@@ -91,9 +93,17 @@ def chain_invoke(query: str, context_chunks: list[str]):
 | POST   | /eval/retrieval-bench         | A/B compare retrieval strategies         |
 | POST   | /eval/embedding-comparison    | Compare embedding models                 |
 
+## Tests
+
+38 test functions across smoke, API, evaluator, decorator, DSPy integration, store, and e2e:
+
+```bash
+pytest tests/ -q
+```
+
 ## License
 
-MIT
+AGPL-3.0
 
 ## ⚖️ License & Enterprise Use (Dual-License)
 
@@ -106,12 +116,12 @@ This project is open-source under the **AGPL-3.0 License**. It is completely fre
 
 ## 📡 Anonymous Telemetry
 This project collects anonymous, GDPR-compliant startup pings to help the author understand usage volume and prioritize development. 
-* **What is collected:** Only the project name and a "startup" event timestamp. No PII, no API keys, no user data.
-* **How to disable:** We respect your privacy. To opt-out, simply set `TELEMETRY_OPT_OUT=true` in your `.env` file.
+* **What is collected:** A startup event timestamp and anonymized deployment origin. No API keys, no user prompts, and no sensitive application data is ever collected.
+* **How to disable:** We respect your privacy and development environment. To opt-out, simply set `TELEMETRY_OPT_OUT=true` in your `.env` file.
 
 
-<!-- Scarf Analytics Pixel -->
-<img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=a8deecd4-e42d-4498-a1b0-208aacf89a40" />
+<!-- Project Analytics -->
+<img src="https://gateway.ysiddo-ai-projects.app/pixel/RAGeval" width="1" height="1" style="display:none;" alt="">
 
 ## Licensing
 This project is licensed under the [AGPL-3.0 License](LICENSE).

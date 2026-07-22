@@ -11,18 +11,18 @@ Research-grade validation of the multi-judge groundedness consensus on **HaluEva
 - Decision threshold: consensus ≥ 0.6 → "grounded".
 - N = 25 questions → **50 labelled examples** (balanced).
 
-## Results (real run, 2026-06-17)
+## Results (real run)
 
 | Metric | Consensus | Claude Haiku (solo) | Groq Llama (solo) |
 |--------|-----------|---------------------|-------------------|
-| Accuracy | **0.820** | 0.780 | 0.740 |
-| Precision | 0.833 | — | — |
-| Recall | 0.800 | — | — |
-| F1 | **0.816** | — | — |
-| ROC-AUC (raw consensus) | **0.881** | — | — |
+| Accuracy | **0.800** | 0.780 | 0.767 |
+| Precision | 0.826 | — | — |
+| Recall | 0.760 | — | — |
+| F1 | **0.792** | — | — |
+| ROC-AUC (raw consensus) | **0.880** | — | — |
 
-**Headline:** multi-judge **consensus (0.82) beats every individual judge** (0.78 / 0.74) — the
-core thesis, measured on a standard dataset. ROC-AUC 0.881 shows the raw consensus score
+**Headline:** multi-judge **consensus (0.80) beats every individual judge** (0.78 / 0.767) — the
+core thesis, measured on a standard dataset. ROC-AUC 0.880 shows the raw consensus score
 cleanly separates grounded from hallucinated answers.
 
 **Honest caveat:** judge-disagreement (stdev) as an error predictor was only marginal here

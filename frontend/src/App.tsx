@@ -1,6 +1,9 @@
+import UserGuidePage from './pages/UserGuidePage'
+import BenchmarkPage from './pages/BenchmarkPage';
+import ApiDocsPage from './pages/ApiDocsPage';
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark } from "lucide-react";
+import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark , BookOpen} from "lucide-react";
 import { AppShell } from "./kit/AppShell";
 import { WakingBackend } from "./kit/misc";
 import { Skeleton } from "./kit/primitives";
@@ -30,6 +33,7 @@ const NAV = [
   { to: "/alerts", label: "Alerts", icon: BellRing },
   { to: "/instrumentation", label: "Instrumentation", icon: Code2 },
   { to: "/api-docs", label: "API Docs", icon: Code2 },
+  { to: "/user-guide", label: "User Guide", icon: BookOpen }
 ];
 
 export default function App() {
@@ -68,7 +72,9 @@ export default function App() {
               <Route path="/cost" element={<Cost />} />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/instrumentation" element={<Instrumentation />} />
-              <Route path="/api-docs" element={<ApiDocs />} />
+              <Route path="/api-docs" element={<ApiDocsPage />} />
+              <Route path="/benchmark" element={<BenchmarkPage />} />
+              <Route path="/user-guide" element={<UserGuidePage />} />
               <Route path="*" element={<Overview />} />
             </Routes>
           </Suspense>
