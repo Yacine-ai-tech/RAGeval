@@ -13,7 +13,7 @@ const AUTH_URL = process.env.INTELAI_API_URL || '/';
 
 async function getAuthToken(request: any): Promise<string> {
   const resp = await request.post(`${AUTH_URL}/api/login`, {
-    data: { username: 'admin', password: 'fLNtwDH2VaQLbO' }
+    data: { username: 'admin', password = 'REDACTED' }
   }).catch(() => null);
   if (resp && resp.ok()) {
     const body = await resp.json();
@@ -266,9 +266,7 @@ test.describe('Phase 5.1 — RAGeval Mocked Features', () => {
 test.describe('Phase 5.3 — Deep Interactivity', () => {
 
   test('Bulk experiment CSV uploads mock', async ({ page }) => {
-    await page.route('**/api/experiments/upload', async route => {
-      await route.fulfill({ json: { success: true, count: 50 }, status: 200 });
-    });
+    
 
     await page.goto(`${BASE_URL}/experiments`);
     await page.waitForLoadState('domcontentloaded');
@@ -289,9 +287,7 @@ test.describe('Phase 5.3 — Deep Interactivity', () => {
   });
 
   test('Saved query bookmarking mock', async ({ page }) => {
-    await page.route('**/api/queries/save', async route => {
-      await route.fulfill({ json: { success: true }, status: 200 });
-    });
+    
 
     await page.goto(`${BASE_URL}/queries`);
     await page.waitForLoadState('domcontentloaded');
