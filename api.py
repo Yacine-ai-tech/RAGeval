@@ -71,6 +71,14 @@ def _send_telemetry():
             import logging
             logging.info("📡 Anonymous telemetry ENABLED (set TELEMETRY_OPT_OUT=true to disable).")
             
+        # WARM UP ML MODELS
+        try:
+            from src.rageval.evaluator import RAGEvaluator
+            ev = RAGEvaluator()
+            ev._ensure_embedder()
+        except Exception as e:
+            pass
+        
         requests.post(
             "https://gateway.ysiddo-ai-projects.app/telemetry", 
             json={"service": "RAGeval", "event": "startup", "instance_id": str(uuid.getnode())[:8]},
