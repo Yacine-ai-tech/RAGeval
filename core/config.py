@@ -33,7 +33,7 @@ class Settings:
     JUDGE_MODELS = [
         m.strip() for m in os.getenv(
             "JUDGE_MODELS",
-            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,gemini/gemini-1.5-flash",
+            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,gemini/gemini-2.0-flash-lite",
         ).split(",") if m.strip()
     ]
 
@@ -56,7 +56,7 @@ def _apply_gemini_fallback():
     if not openai_key and gemini_key:
         def fallback(model_str):
             if model_str and ("openai" in model_str.lower() or "gpt-" in model_str.lower()):
-                return "gemini/gemini-1.5-flash"
+                return "gemini/gemini-2.0-flash-lite"
             return model_str
             
         for attr in dir(settings):
