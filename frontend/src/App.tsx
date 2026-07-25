@@ -1,7 +1,7 @@
 import UserGuidePage from './pages/UserGuidePage'
 import BenchmarkPage from './pages/BenchmarkPage';
 import ApiDocsPage from './pages/ApiDocsPage';
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { Component, ReactNode, lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark , BookOpen} from "lucide-react";
 import { AppShell } from "./kit/AppShell";
@@ -18,8 +18,69 @@ import Models from "./pages/Models";
 import Saved from "./pages/Saved";
 import ApiDocs from "./pages/ApiDocs";
 
-const Overview = lazy(() => import("./pages/Overview"));
-const Cost = lazy(() => import("./pages/Cost"));
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  componentImport: () => Promise<{ default: T }>
+) {
+  return lazy(async () => {
+    const pageHasBeenRefreshed = JSON.parse(
+      window.sessionStorage.getItem("retry-lazy-refreshed") || "false"
+    );
+    try {
+      const component = await componentImport();
+      window.sessionStorage.removeItem("retry-lazy-refreshed");
+      return component;
+    } catch (error) {
+      if (!pageHasBeenRefreshed) {
+        window.sessionStorage.setItem("retry-lazy-refreshed", "true");
+        window.location.reload();
+        return new Promise<{ default: T }>(() => {});
+      }
+      throw error;
+    }
+  });
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error("RAGeval UI Error caught by boundary:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 text-center text-red-400 bg-red-950/30 rounded-xl border border-red-800/50 m-4">
+          <h2 className="text-xl font-bold mb-2">Component Error</h2>
+          <p className="text-sm opacity-80 mb-4">{this.state.error?.message || "An unexpected error occurred."}</p>
+          <button
+            onClick={() => {
+              window.sessionStorage.removeItem("retry-lazy-refreshed");
+              this.setState({ hasError: false, error: null });
+              window.location.reload();
+            }}
+            className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-medium rounded-lg text-sm transition"
+          >
+            Reload Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const Overview = lazyWithRetry(() => import("./pages/Overview"));
+const Cost = lazyWithRetry(() => import("./pages/Cost"));
 
 const NAV = [
   { to: "/", label: "Overview", icon: Gauge },
@@ -61,22 +122,24 @@ export default function App() {
           <WakingBackend waking={attempts < 6} onRetry={() => setAttempts(0)} />
         ) : (
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-            <Routes>
-              <Route path="/" element={<Overview />} />
-              <Route path="/queries" element={<Queries />} />
-              <Route path="/traces" element={<Traces />} />
-              <Route path="/models" element={<Models />} />
-              <Route path="/saved" element={<Saved />} />
-              <Route path="/evaluate" element={<Evaluate />} />
-              <Route path="/experiments" element={<Experiments />} />
-              <Route path="/cost" element={<Cost />} />
-              <Route path="/alerts" element={<Alerts />} />
-              <Route path="/instrumentation" element={<Instrumentation />} />
-              <Route path="/api-docs" element={<ApiDocsPage />} />
-              <Route path="/benchmark" element={<BenchmarkPage />} />
-              <Route path="/user-guide" element={<UserGuidePage />} />
-              <Route path="*" element={<Overview />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Overview />} />
+                <Route path="/queries" element={<Queries />} />
+                <Route path="/traces" element={<Traces />} />
+                <Route path="/models" element={<Models />} />
+                <Route path="/saved" element={<Saved />} />
+                <Route path="/evaluate" element={<Evaluate />} />
+                <Route path="/experiments" element={<Experiments />} />
+                <Route path="/cost" element={<Cost />} />
+                <Route path="/alerts" element={<Alerts />} />
+                <Route path="/instrumentation" element={<Instrumentation />} />
+                <Route path="/api-docs" element={<ApiDocsPage />} />
+                <Route path="/benchmark" element={<BenchmarkPage />} />
+                <Route path="/user-guide" element={<UserGuidePage />} />
+                <Route path="*" element={<Overview />} />
+              </Routes>
+            </ErrorBoundary>
           </Suspense>
         )}
       </AppShell>
