@@ -239,13 +239,15 @@ class RAGEvaluator:
         sims = cosine_similarity(vecs[:1], vecs[1:])[0]
         return float(np.mean(sims))
 
-    async def _judge_groundedness(self, answer: str, context: str, model: str) -> Optional[float]:
-        """One LLM judge call. Returns a float 0-1, or ``None`` when the judge is unavailable
-        (LiteLLM missing, or the provider errors — e.g. a model whose API key isn't set). A
-        ``None`` judge is SKIPPED by the consensus rather than counted, so an unconfigured judge
-        (say OpenAI before you add the key) never pollutes the score or triggers false review flags."""
+    async def _judge_groundedness(self, answer: str, context: str, model: str) -> tuple[Optional[float], int, float]:
+        """One LLM judge call. Returns (score, tokens_used, latency_ms), or (None, 0, 0) when unavailable.
+        
+        Tokens and latency are extracted from the actual LiteLLM response to provide real metrics
+        instead of defaulting to 0. This enables accurate cost tracking and performance monitoring."""
         if not _LITELLM:
-            return None  # judge unavailable → skip (do not inject a fake 0.5)
+            return None, 0, 0.0  # judge unavailable → skip
+        import time
+        t0 = time.time()
         try:
             resp = await acompletion(
                 model=model,
@@ -260,13 +262,28 @@ class RAGEvaluator:
                 }],
                 temperature=0.0,
             )
+            latency_ms = (time.time() - t0) * 1000
+            
+            # Extract token usage from response
+            tokens_used = 0
+            if hasattr(resp, 'usage') and resp.usage:
+                tokens_used = resp.usage.total_tokens
+            elif hasattr(resp, '_response') and hasattr(resp._response, 'headers'):
+                # Fallback: try to get from headers if usage object not available
+                headers = resp._response.headers if hasattr(resp._response, 'headers') else {}
+                tokens_used = int(headers.get('x-openai-usage-total-tokens', 0))
+            
             content = (resp.choices[0].message.content or "").strip()
             # Parse the score: prefer a DECIMAL (0.85 / 1.0) — the actual score format — so we
             # don't grab the leading "0" from prose like "on a 0-1 scale". Fall back to a bare 0/1.
             import re
             clean = content.replace("0.0-1.0", "").replace("0=hallucinated", "").replace("1=fully grounded", "")
             m = re.search(r"(?<![.\d])(?:0?\.\d+|1\.0+)(?![.\d])", clean) or re.search(r"\b[01]\b", clean)
-            return max(0.0, min(1.0, float(m.group()))) if m else None
+            score = max(0.0, min(1.0, float(m.group()))) if m else None
+            return score, tokens_used, latency_ms
+        except Exception as e:
+            log.warning("judge %s unavailable (skipped): %s", model, e)
+            return None, 0, 0.0
         except Exception as e:
             # Missing API key / provider error → treat as an unavailable judge (skip), not 0.5.
             log.warning("judge %s unavailable (skipped): %s", model, e)
@@ -274,12 +291,18 @@ class RAGEvaluator:
 
     async def score_groundedness_consensus(self, answer: str, context: str) -> Dict[str, Any]:
         """Multi-judge consensus across the JUDGE_MODELS that are actually reachable. Judges whose
-        provider key isn't configured are skipped, so the score reflects only real votes."""
+        provider key isn't configured are skipped, so the score reflects only real votes.
+        
+        Now accumulates actual token usage and latency from each judge call for accurate metrics."""
         scores: List[Dict[str, Any]] = []
+        total_tokens = 0
+        total_latency = 0.0
         for model in settings.JUDGE_MODELS:
-            s = await self._judge_groundedness(answer, context, model=model)
+            s, tokens, latency = await self._judge_groundedness(answer, context, model=model)
             if s is not None:                       # skip unavailable/unconfigured judges
-                scores.append({"model": model, "score": s})
+                scores.append({"model": model, "score": s, "tokens_used": tokens, "latency_ms": latency})
+                total_tokens += tokens
+                total_latency += latency
         nums = [s["score"] for s in scores]
         stdev = statistics.stdev(nums) if len(nums) > 1 else 0.0
         return {
@@ -287,6 +310,8 @@ class RAGEvaluator:
             "stdev": stdev,
             "judges": scores,
             "judges_used": len(scores),
+            "total_tokens_used": total_tokens,
+            "total_latency_ms": total_latency,
             # Only flag disagreement when at least two real judges voted.
             "flag_for_review": len(nums) > 1 and stdev > 0.2,
         }
@@ -355,10 +380,25 @@ class RAGEvaluator:
         model: str,
         persona: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """End-to-end interaction scoring."""
+        """End-to-end interaction scoring. Now uses actual measured tokens and latency from LLM calls
+        instead of relying on caller-provided (often zero) values."""
+        import time
+        t0 = time.time()
+        
         relevance = self.score_retrieval_relevance(query, chunks)
         consensus = await self.score_groundedness_consensus(answer, "\n".join(chunks))
         faithfulness = self.score_faithfulness(answer, chunks)
+        
+        # Use actual measured tokens/latency from consensus if available, otherwise use input params
+        actual_tokens = consensus.get("total_tokens_used", tokens_used)
+        actual_latency = consensus.get("total_latency_ms", latency_ms)
+        
+        # If input params were 0 but we have actual metrics, use those
+        if tokens_used == 0 and actual_tokens > 0:
+            tokens_used = actual_tokens
+        if latency_ms == 0.0 and actual_latency > 0:
+            latency_ms = actual_latency
+            
         cost = self.calculate_cost(tokens_used, model)
         groundedness = consensus["consensus"]
         overall_quality = 0.4 * relevance + 0.4 * groundedness + 0.2 * faithfulness
