@@ -240,18 +240,36 @@ class RAGEvaluator:
         return float(np.mean(sims))
 
     async def _judge_groundedness(self, answer: str, context: str, model: str) -> tuple[Optional[float], int, float]:
-        """One LLM judge call. Returns (score, tokens_used, latency_ms), or (None, 0, 0) when unavailable.
-        
-        Tokens and latency are extracted from the actual LiteLLM response to provide real metrics
-        instead of defaulting to 0. This enables accurate cost tracking and performance monitoring."""
+        """One LLM judge call. Returns (score, tokens_used, latency_ms), or (None, 0, 0) when unavailable."""
         if not _LITELLM:
-            return None, 0, 0.0  # judge unavailable → skip
+            return None, 0, 0.0
         import time
         t0 = time.time()
+
+        # Handle OpenAI -> Gemini fallback
+        openai_key = os.getenv("OPENAI_API_KEY", "") or getattr(settings, "OPENAI_API_KEY", "")
+        gemini_key = os.getenv("GEMINI_API_KEY", "") or getattr(settings, "GEMINI_API_KEY", "")
+        
+        target_model = model
+        api_key = None
+
+        if "openai" in model.lower() or "gpt-" in model.lower():
+            if not openai_key and gemini_key:
+                target_model = "gemini/gemini-2.5-flash"
+                api_key = gemini_key
+            else:
+                api_key = openai_key
+        elif "gemini" in model.lower():
+            api_key = gemini_key
+        elif "anthropic" in model.lower() or "claude" in model.lower():
+            api_key = os.getenv("ANTHROPIC_API_KEY", "") or getattr(settings, "ANTHROPIC_API_KEY", "")
+        elif "groq" in model.lower():
+            api_key = os.getenv("GROQ_API_KEY", "") or getattr(settings, "GROQ_API_KEY", "")
+
         try:
-            resp = await acompletion(
-                model=model,
-                messages=[{
+            kwargs = {
+                "model": target_model,
+                "messages": [{
                     "role": "user",
                     "content": (
                         "Is this answer fully supported by the context? "
@@ -260,8 +278,12 @@ class RAGEvaluator:
                         f"Answer: {answer[:2000]}\n\nContext: {context[:4000]}"
                     ),
                 }],
-                temperature=0.0,
-            )
+                "temperature": 0.0,
+            }
+            if api_key:
+                kwargs["api_key"] = api_key
+
+            resp = await acompletion(**kwargs)
             latency_ms = (time.time() - t0) * 1000
             
             # Extract token usage from response
