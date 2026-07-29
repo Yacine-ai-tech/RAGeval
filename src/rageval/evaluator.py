@@ -255,7 +255,7 @@ class RAGEvaluator:
 
         if "openai" in model.lower() or "gpt-" in model.lower():
             if not openai_key and gemini_key:
-                target_model = "gemini/gemini-2.5-flash"
+                target_model = "gemini/gemini-1.5-flash"
                 api_key = gemini_key
             else:
                 api_key = openai_key
