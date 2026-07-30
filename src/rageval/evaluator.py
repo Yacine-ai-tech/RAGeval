@@ -111,7 +111,35 @@ class RAGEvaluator:
 
     _LAST_EMBED_WAKE = 0.0
 
-    def _remote_embed(self, texts: List[str], model: Optional[str] = None):
+    def _embed(self, texts: List[str]):
+        """
+        Embed texts with this evaluator's model. Delegates to inference_adapter which
+        handles the full fallback chain: Orchestrator Studio → Cohere → Jina → local → None.
+        Returns np.ndarray or None (caller degrades to a neutral score).
+        """
+        if not texts:
+            return None
+        try:
+            import sys, os as _os
+            # Make services/ importable regardless of working directory
+            _svc_dir = _os.path.join(_os.path.dirname(_os.path.dirname(
+                _os.path.dirname(_os.path.abspath(__file__)))), "services")
+            if _svc_dir not in sys.path:
+                sys.path.insert(0, _svc_dir)
+            from inference_adapter import embed as _adapter_embed
+        except ImportError:
+            log.warning("inference_adapter not available — embedding scorer degraded")
+            return None
+        vecs = _adapter_embed(texts, model=self.embedding_model_name)
+        if vecs is not None and len(vecs) == len(texts):
+            try:
+                import numpy as np
+                return np.asarray(vecs)
+            except ImportError:
+                pass
+        return None
+
+
         """Embed via the Lightning inference backend (LIGHTNING_EMBED_URL) so small (512MB) hosts
         don't OOM loading torch. Sends `model` so the Studio embeds with the requested model (real
         multi-model comparison). Returns a numpy array or None; on failure wakes the Studio."""
