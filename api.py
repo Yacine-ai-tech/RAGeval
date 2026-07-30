@@ -109,9 +109,12 @@ async def verify_internal_token(request: Request, call_next):
     }
     valid_tokens.discard(None)
     
-    if token not in valid_tokens and _os.environ.get("REQUIRE_INTERNAL_TOKEN", "false").lower() == "true":
-        return JSONResponse(status_code=403, content={"detail": "Missing or invalid X-OmniIntel-Internal-Token"})
-        
+    req_token_setting = _os.environ.get("REQUIRE_INTERNAL_TOKEN", "false").lower()
+    if req_token_setting in ("true", "1", "yes"):
+        if token not in valid_tokens:
+            auth_h = request.headers.get("Authorization", "")
+            if not any(t in auth_h for t in valid_tokens if t):
+                return JSONResponse(status_code=403, content={"detail": "Missing or invalid X-OmniIntel-Internal-Token"})
     return await call_next(request)
 
 app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ALLOWED_ORIGINS or ["*"],
