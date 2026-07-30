@@ -139,30 +139,6 @@ class RAGEvaluator:
                 pass
         return None
 
-
-        """Embed via the Lightning inference backend (LIGHTNING_EMBED_URL) so small (512MB) hosts
-        don't OOM loading torch. Sends `model` so the Studio embeds with the requested model (real
-        multi-model comparison). Returns a numpy array or None; on failure wakes the Studio."""
-        url = os.getenv("LIGHTNING_EMBED_URL", "").strip()
-        if not url:
-            return None
-        try:
-            import json as _j, urllib.request
-            h = {"Content-Type": "application/json", "User-Agent": "RAGeval/1.0 (+https://ysiddo-ai-projects.app)"}
-            tk = os.getenv("INFERENCE_TOKEN", "").strip()
-            if tk:
-                h["Authorization"] = "Bearer " + tk
-            payload = {"texts": texts}
-            if model:
-                payload["model"] = model
-            req = urllib.request.Request(url.rstrip("/") + "/embed", data=_j.dumps(payload).encode(), headers=h)
-            vecs = _j.loads(urllib.request.urlopen(req, timeout=float(os.getenv("LIGHTNING_EMBED_TIMEOUT", "30"))).read())["embeddings"]
-            return np.asarray(vecs)
-        except Exception as e:
-            log.warning("remote embed unavailable (%s) — degrading + waking studio", e)
-            self._wake_studio()
-            return None
-
     def _wake_studio(self):
         """Fire-and-forget wake of the on-demand inference Studio (rate-limited)."""
         import time as _t, threading
