@@ -198,24 +198,6 @@ class RAGEvaluator:
             log.warning("hosted embed unavailable (%s) — degrading", e)
             return None
 
-    def _embed(self, texts: List[str]):
-        """Embed texts with THIS evaluator's model (self.embedding_model_name): remote Lightning
-        backend first (off-box, no OOM), then a hosted API backstop (HOSTED_EMBED_PROVIDER), then a
-        local model only if USE_LOCAL_EMBEDDER. Returns a numpy array or None (caller degrades to a
-        neutral score)."""
-        if not texts:
-            return None
-        remote = self._remote_embed(texts, model=self.embedding_model_name)
-        if remote is not None and len(remote) == len(texts):
-            return remote
-        # Hosted-API backstop: keeps relevance scoring real when the Studio is down (no torch needed).
-        hosted = self._hosted_embed(texts)
-        if hosted is not None and len(hosted) == len(texts):
-            return hosted
-        emb = self._ensure_embedder()
-        if emb is None:
-            return None
-        return np.asarray(emb.encode(texts))
 
     @staticmethod
     def _tokens(s: str) -> set:
@@ -443,17 +425,17 @@ class RAGEvaluator:
             flags.append("PERSONA_SCOPE_VIOLATION")
 
         return {
-            "relevance": relevance,
-            "groundedness": groundedness,
+            "relevance": float(relevance),
+            "groundedness": float(groundedness),
             "groundedness_consensus": consensus,
-            "faithfulness": faithfulness,
-            "cost_usd": cost,
-            "latency_ms": latency_ms,
-            "tokens_used": tokens_used,
-            "model": model,
+            "faithfulness": float(faithfulness),
+            "cost_usd": float(cost),
+            "latency_ms": float(latency_ms),
+            "tokens_used": int(tokens_used),
+            "model": str(model),
             "persona": persona,
             "persona_scope_violations": scope_violations,
-            "overall_quality": overall_quality,
+            "overall_quality": float(overall_quality),
             "flags": flags,
             "needs_review": bool(flags),
         }
