@@ -7,7 +7,7 @@ import httpx
 import json
 
 # Deployed service URL
-RAGEVAL_URL = "https://rageval.ysiddo-ai-projects.app"
+RAGEVAL_URL = "http://localhost:8000"
 
 def test_health():
     """Test health endpoint"""

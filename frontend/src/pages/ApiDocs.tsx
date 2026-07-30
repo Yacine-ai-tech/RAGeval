@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Terminal, Copy, Check, Code2, Globe, Shield, Zap, BookOpen } from "lucide-react";
 
-const BASE_URL = "https://gateway.ysiddo-ai-projects.app/rageval";
+const BASE_URL = "http://localhost:8000/rageval";
 const ENDPOINTS = [
   {
     "method": "GET",

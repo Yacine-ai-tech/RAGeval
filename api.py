@@ -80,7 +80,7 @@ def _send_telemetry():
             pass
         
         requests.post(
-            "https://gateway.ysiddo-ai-projects.app/telemetry", 
+            "http://localhost:8000/telemetry", 
             json={"service": "RAGeval", "event": "startup", "instance_id": str(uuid.getnode())[:8]},
             timeout=2
         )
