@@ -334,10 +334,6 @@ class RAGEvaluator:
         except Exception as e:
             log.warning("judge %s unavailable (skipped): %s", model, e)
             return None, 0, 0.0
-        except Exception as e:
-            # Missing API key / provider error → treat as an unavailable judge (skip), not 0.5.
-            log.warning("judge %s unavailable (skipped): %s", model, e)
-            return None
 
     async def score_groundedness_consensus(self, answer: str, context: str) -> Dict[str, Any]:
         """Multi-judge consensus across the JUDGE_MODELS that are actually reachable. Judges whose
