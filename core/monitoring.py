@@ -101,7 +101,7 @@ class UnifiedMonitor:
                 elif s.name.endswith("_count"):
                     lat_count += s.value
         except Exception:
-            import logging; logging.error('Unhandled exception', exc_info=True)
+            log.exception("Unexpected error")
             pass
         avg_latency_ms = (lat_sum / lat_count * 1000) if lat_count > 0 else 0.0
 

@@ -28,8 +28,10 @@ except ImportError:
 try:
     import litellm
     from litellm import acompletion
-    # Drop provider-unsupported params instead of erroring — e.g. GPT-5 models reject
-    # temperature=0.0 (only 1 is allowed), which otherwise makes the OpenAI judge fail.
+    # Drop provider-unsupported parameters instead of raising errors.
+    # Some models (e.g., newer GPT variants) reject temperature=0.0; setting
+    # drop_params=True silently removes unsupported fields, keeping the judge stable.
+
     litellm.drop_params = True
     _LITELLM = True
 except ImportError:
@@ -156,7 +158,7 @@ class RAGEvaluator:
                 urllib.request.urlopen(urllib.request.Request(url.rstrip("/") + "/wake",
                     data=_j.dumps({"gpu": False}).encode(), headers=h), timeout=90)
             except Exception:
-                import logging; logging.error('Unhandled exception', exc_info=True)
+                log.exception("Unexpected error")
                 pass
         threading.Thread(target=_go, daemon=True).start()
 
