@@ -54,6 +54,14 @@ OPENAI_PRICES = {
     "openai/gpt-5": (5.00, 15.00),
     "openai/gpt-5-mini": (0.15, 0.60),
 }
+GEMINI_PRICES = {
+    "gemini/gemini-1.5-flash": (0.075, 0.30),
+    "gemini/gemini-2.0-flash": (0.10, 0.40),
+    "gemini/gemini-1.5-pro": (1.25, 5.00),
+    "google/gemini-1.5-flash": (0.075, 0.30),
+    "google/gemini-2.0-flash": (0.10, 0.40),
+    "google/gemini-1.5-pro": (1.25, 5.00),
+}
 
 # ── Persona scope awareness ──────────────────────────────────────────────────
 # Which business domains each persona is allowed to speak to (mirrors the persona
@@ -342,11 +350,25 @@ class RAGEvaluator:
 
     @staticmethod
     def calculate_cost(tokens: int, model: str, input_ratio: float = 0.7) -> float:
-        """Estimate USD cost from total tokens (split per input_ratio)."""
-        prices = {**GROQ_PRICES, **ANTHROPIC_PRICES, **OPENAI_PRICES}
-        if model not in prices:
-            return 0.0
-        in_price, out_price = prices[model]
+        """Estimate USD cost from total tokens (split per input_ratio). Automatically adapts when OpenAI falls back to Gemini."""
+        openai_key = os.getenv("OPENAI_API_KEY", "") or getattr(settings, "OPENAI_API_KEY", "")
+        gemini_key = os.getenv("GEMINI_API_KEY", "") or getattr(settings, "GEMINI_API_KEY", "")
+        
+        effective_model = model
+        if ("openai" in model.lower() or "gpt-" in model.lower()) and not openai_key and gemini_key:
+            effective_model = "gemini/gemini-1.5-flash"
+
+        prices = {**GROQ_PRICES, **ANTHROPIC_PRICES, **OPENAI_PRICES, **GEMINI_PRICES}
+        if effective_model not in prices:
+            if "gemini" in effective_model.lower():
+                in_price, out_price = 0.075, 0.30
+            elif "gpt-4" in effective_model.lower() or "gpt-5" in effective_model.lower():
+                in_price, out_price = 5.00, 15.00
+            else:
+                return 0.0
+        else:
+            in_price, out_price = prices[effective_model]
+
         input_toks = tokens * input_ratio
         output_toks = tokens * (1 - input_ratio)
         return (input_toks * in_price + output_toks * out_price) / 1_000_000
