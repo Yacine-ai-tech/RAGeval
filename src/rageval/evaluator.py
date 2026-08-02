@@ -54,6 +54,14 @@ OPENAI_PRICES = {
     "openai/gpt-5": (5.00, 15.00),
     "openai/gpt-5-mini": (0.15, 0.60),
 }
+GEMINI_PRICES = {
+    "gemini/gemini-1.5-flash": (0.075, 0.30),
+    "gemini/gemini-2.0-flash": (0.10, 0.40),
+    "gemini/gemini-1.5-pro": (1.25, 5.00),
+    "google/gemini-1.5-flash": (0.075, 0.30),
+    "google/gemini-2.0-flash": (0.10, 0.40),
+    "google/gemini-1.5-pro": (1.25, 5.00),
+}
 
 # ── Persona scope awareness ──────────────────────────────────────────────────
 # Which business domains each persona is allowed to speak to (mirrors the persona
@@ -162,43 +170,6 @@ class RAGEvaluator:
                 pass
         threading.Thread(target=_go, daemon=True).start()
 
-    def _hosted_embed(self, texts: List[str]):
-        """Hosted embeddings backstop (Cohere ``/v2/embed`` by default, Jina ``/v1/embeddings``
-        alternate) so retrieval scoring stays real when the on-demand Lightning Studio is unreachable
-        and torch isn't installed — survives on a 512MB host. Enabled by ``HOSTED_EMBED_PROVIDER``
-        (cohere|jina) + the provider's free, no-card key. Returns np.ndarray or None. This is a
-        graceful fallback: true multi-model embedding comparison still uses the Studio (this path
-        always uses the hosted model, not self.embedding_model_name). Stdlib urllib only."""
-        provider = os.getenv("HOSTED_EMBED_PROVIDER", "").strip().lower()
-        if provider not in ("cohere", "jina"):
-            return None
-        key = os.getenv("COHERE_API_KEY" if provider == "cohere" else "JINA_API_KEY", "").strip()
-        if not key:
-            return None
-        try:
-            import json as _j, urllib.request
-            timeout = float(os.getenv("HOSTED_EMBED_TIMEOUT", "30"))
-            h = {"Content-Type": "application/json", "Authorization": "Bearer " + key}
-            if provider == "cohere":
-                url = os.getenv("COHERE_BASE_URL", "https://api.cohere.com").rstrip("/") + "/v2/embed"
-                payload = {"model": os.getenv("HOSTED_EMBEDDING_MODEL", "embed-english-v3.0"),
-                           "texts": list(texts),
-                           "input_type": os.getenv("HOSTED_EMBED_INPUT_TYPE", "search_document"),
-                           "embedding_types": ["float"]}
-                req = urllib.request.Request(url, data=_j.dumps(payload).encode(), headers=h)
-                data = _j.loads(urllib.request.urlopen(req, timeout=timeout).read())
-                vecs = data["embeddings"]["float"]
-            else:  # jina (OpenAI-compatible embeddings schema)
-                url = "https://api.jina.ai/v1/embeddings"
-                payload = {"model": os.getenv("HOSTED_EMBEDDING_MODEL", "jina-embeddings-v3"),
-                           "input": list(texts)}
-                req = urllib.request.Request(url, data=_j.dumps(payload).encode(), headers=h)
-                data = _j.loads(urllib.request.urlopen(req, timeout=timeout).read())
-                vecs = [r["embedding"] for r in sorted(data["data"], key=lambda d: d.get("index", 0))]
-            return np.asarray(vecs)
-        except Exception as e:
-            log.warning("hosted embed unavailable (%s) — degrading", e)
-            return None
 
 
     @staticmethod
@@ -342,11 +313,25 @@ class RAGEvaluator:
 
     @staticmethod
     def calculate_cost(tokens: int, model: str, input_ratio: float = 0.7) -> float:
-        """Estimate USD cost from total tokens (split per input_ratio)."""
-        prices = {**GROQ_PRICES, **ANTHROPIC_PRICES, **OPENAI_PRICES}
-        if model not in prices:
-            return 0.0
-        in_price, out_price = prices[model]
+        """Estimate USD cost from total tokens (split per input_ratio). Automatically adapts when OpenAI falls back to Gemini."""
+        openai_key = os.getenv("OPENAI_API_KEY", "") or getattr(settings, "OPENAI_API_KEY", "")
+        gemini_key = os.getenv("GEMINI_API_KEY", "") or getattr(settings, "GEMINI_API_KEY", "")
+        
+        effective_model = model
+        if ("openai" in model.lower() or "gpt-" in model.lower()) and not openai_key and gemini_key:
+            effective_model = "gemini/gemini-1.5-flash"
+
+        prices = {**GROQ_PRICES, **ANTHROPIC_PRICES, **OPENAI_PRICES, **GEMINI_PRICES}
+        if effective_model not in prices:
+            if "gemini" in effective_model.lower():
+                in_price, out_price = 0.075, 0.30
+            elif "gpt-4" in effective_model.lower() or "gpt-5" in effective_model.lower():
+                in_price, out_price = 5.00, 15.00
+            else:
+                return 0.0
+        else:
+            in_price, out_price = prices[effective_model]
+
         input_toks = tokens * input_ratio
         output_toks = tokens * (1 - input_ratio)
         return (input_toks * in_price + output_toks * out_price) / 1_000_000

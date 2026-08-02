@@ -2,26 +2,17 @@
 RAGeval Inference Adapter
 ==========================
 Unified adapter for embedding inference that can't run on the 512MB Render free tier.
-Mirrors the IntelAI inference_adapter.py pattern.
-
-Fallback chain (remote mode):
-  1. Orchestrator Studio (/embed)        [RAGEVAL_REMOTE_ENDPOINT]
-  2. Cohere /v2/embed                    [COHERE_API_KEY]
-  3. Jina /v1/embeddings                 [JINA_API_KEY]
-  4. Local sentence-transformers          [USE_LOCAL_EMBEDDER=true]
-  5. None → caller degrades gracefully
+Mirrors the IntelAI inference_adapter.py pattern with dynamic dialect routing.
 
 Env vars:
   RAGEVAL_INFERENCE_MODE=local|remote   (default: remote if RAGEVAL_REMOTE_ENDPOINT set)
-  RAGEVAL_REMOTE_ENDPOINT=              (Orchestrator tunnel URL — falls back to LIGHTNING_EMBED_URL)
-  RAGEVAL_REMOTE_TOKEN=                 (bearer token — falls back to INFERENCE_TOKEN)
+  RAGEVAL_REMOTE_ENDPOINT=              (Target URL for remote embedding API)
+  RAGEVAL_REMOTE_TOKEN=                 (bearer token — falls back to provider-specific keys)
   EMBEDDING_MODEL=BAAI/bge-large-en-v1.5
   COHERE_API_KEY=
-  JINA_API_KEY=
-  HOSTED_EMBEDDING_MODEL=embed-english-v3.0
-  HOSTED_EMBED_INPUT_TYPE=search_document
+  HF_TOKEN= / HF_READ_TOKEN=
+  HOSTED_EMBEDDING_MODEL=               (Explicit override for Cohere/HF remote models)
   RAGEVAL_EMBED_TIMEOUT=30
-  USE_LOCAL_EMBEDDER=false
 """
 from __future__ import annotations
 
@@ -36,6 +27,15 @@ from typing import List, Optional
 log = logging.getLogger(__name__)
 
 _LAST_WAKE = 0.0
+
+# Maps local embedding models to their closest Cohere equivalents
+_COHERE_MODEL_MAP = {
+    "baai/bge-large-en-v1.5": "embed-english-v3.0",
+    "all-minilm-l6-v2": "embed-english-light-v3.0",
+    "bge-m3": "embed-multilingual-v3.0",
+    "baai/bge-m3": "embed-multilingual-v3.0",
+    "default": "embed-english-v3.0",
+}
 
 
 def _remote_endpoint() -> str:
@@ -56,13 +56,24 @@ def _use_local() -> bool:
         return True
     if mode == "remote":
         return False
-    return (os.getenv("USE_LOCAL_EMBEDDER", "false").lower() == "true"
-            and not _remote_endpoint())
+    # Default to remote if remote endpoint is set, otherwise local
+    return not _remote_endpoint()
+
+
+def _detect_dialect(url: str) -> str:
+    url_lower = url.lower()
+    if "cohere.com" in url_lower:
+        return "cohere"
+    if "huggingface" in url_lower:
+        return "hf"
+    if "orchestrator" in url_lower or "lightning" in url_lower:
+        return "orchestrator"
+    return "openai"
 
 
 def _fire_wake():
     global _LAST_WAKE
-    url = (os.getenv("ORCHESTRATOR_URL", "") or os.getenv("RAGEVAL_REMOTE_ENDPOINT", "")).strip()
+    url = _remote_endpoint()
     if not url or (time.time() - _LAST_WAKE) < 60:
         return
     _LAST_WAKE = time.time()
@@ -70,11 +81,11 @@ def _fire_wake():
     def _go():
         try:
             h = {"Content-Type": "application/json"}
-            tk = os.getenv("ORCH_TOKEN", os.getenv("RAGEVAL_REMOTE_TOKEN", "")).strip()
+            tk = _remote_token() or os.getenv("ORCH_TOKEN", "").strip()
             if tk:
                 h["Authorization"] = f"Bearer {tk}"
             body = _json.dumps({"gpu": False, "service": "rageval"}).encode()
-            req = urllib.request.Request(url.rstrip("/") + "/wake", data=body, headers=h)
+            req = urllib.request.Request(url + "/wake", data=body, headers=h)
             urllib.request.urlopen(req, timeout=10)
         except Exception as e:
             log.debug("wake signal failed: %s", e)
@@ -82,65 +93,96 @@ def _fire_wake():
     threading.Thread(target=_go, daemon=True).start()
 
 
-def _orchestrator_embed(texts: List[str], model: Optional[str] = None) -> Optional[List[List[float]]]:
-    url = _remote_endpoint()
-    if not url:
-        return None
-    ep = url.lower()
-    if "cohere.com" in ep or "jina.ai" in ep:
-        return None  # not an orchestrator endpoint
+def _call_remote_embed(
+    url: str,
+    token: str,
+    texts: List[str],
+    model: Optional[str] = None
+) -> Optional[List[List[float]]]:
+    dialect = _detect_dialect(url)
     timeout = int(os.getenv("RAGEVAL_EMBED_TIMEOUT", "30"))
+    h = {"Content-Type": "application/json"}
+
+    # Resolve token by dialect if default token not set
+    if not token:
+        if dialect == "cohere":
+            token = os.getenv("COHERE_API_KEY", "").strip()
+        elif dialect == "hf":
+            token = (os.getenv("HF_TOKEN", "") or os.getenv("HF_READ_TOKEN", "")).strip()
+        elif dialect == "orchestrator":
+            token = os.getenv("ORCH_TOKEN", "").strip()
+
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+
     try:
-        payload: dict = {"texts": texts}
-        if model:
-            payload["model"] = model
-        h = {"Content-Type": "application/json"}
-        tk = _remote_token()
-        if tk:
-            h["Authorization"] = f"Bearer {tk}"
-        req = urllib.request.Request(url + "/embed", data=_json.dumps(payload).encode(), headers=h)
-        resp = _json.loads(urllib.request.urlopen(req, timeout=timeout).read())
-        return resp.get("embeddings")
+        if dialect == "cohere":
+            if not url.endswith("/v2/embed"):
+                url = url.rstrip("/") + "/v2/embed"
+            
+            # Map the local model name to Cohere's equivalent model
+            resolved_model = os.getenv("HOSTED_EMBEDDING_MODEL", "").strip()
+            if not resolved_model:
+                model_key = (model or os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")).strip().lower()
+                resolved_model = _COHERE_MODEL_MAP.get(model_key, _COHERE_MODEL_MAP["default"])
+
+            payload = {
+                "model": resolved_model,
+                "texts": list(texts),
+                "input_type": os.getenv("HOSTED_EMBED_INPUT_TYPE", "search_document"),
+                "embedding_types": ["float"],
+            }
+            req = urllib.request.Request(url, data=_json.dumps(payload).encode(), headers=h)
+            data = _json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+            return data["embeddings"]["float"]
+
+        elif dialect == "hf":
+            m = model or os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")
+            
+            # Map standard model names to full HF model IDs
+            hf_model_id = m
+            if m.lower() == "all-minilm-l6-v2":
+                hf_model_id = "sentence-transformers/all-MiniLM-L6-v2"
+            elif m.lower() == "bge-m3":
+                hf_model_id = "BAAI/bge-m3"
+
+            # HuggingFace hosted model override if provided
+            override_model = os.getenv("HOSTED_EMBEDDING_MODEL", "").strip()
+            if override_model:
+                hf_model_id = override_model
+
+            if not ("/models/" in url or "/pipeline/feature-extraction/" in url):
+                url = url.rstrip("/") + f"/pipeline/feature-extraction/{hf_model_id}"
+            payload = {"inputs": texts, "options": {"wait_for_model": True}}
+            req = urllib.request.Request(url, data=_json.dumps(payload).encode(), headers=h)
+            data = _json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+            return data
+
+        elif dialect == "orchestrator":
+            if not url.endswith("/embed"):
+                url = url.rstrip("/") + "/embed"
+            payload: dict = {"texts": texts}
+            if model:
+                payload["model"] = model
+            req = urllib.request.Request(url, data=_json.dumps(payload).encode(), headers=h)
+            resp = _json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+            return resp.get("embeddings")
+
+        else:  # openai
+            if not (url.endswith("/v1/embeddings") or url.endswith("/embeddings")):
+                url = url.rstrip("/") + "/v1/embeddings"
+            payload = {
+                "input": texts,
+                "model": model or os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")
+            }
+            req = urllib.request.Request(url, data=_json.dumps(payload).encode(), headers=h)
+            resp = _json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+            return [item["embedding"] for item in resp["data"]]
+
     except Exception as e:
-        log.warning("orchestrator embed failed (%s) — waking studio", e)
-        _fire_wake()
-        return None
-
-
-def _cohere_embed(texts: List[str]) -> Optional[List[List[float]]]:
-    key = os.getenv("COHERE_API_KEY", "").strip()
-    if not key:
-        return None
-    try:
-        url = os.getenv("COHERE_BASE_URL", "https://api.cohere.com").rstrip("/") + "/v2/embed"
-        payload = {
-            "model": os.getenv("HOSTED_EMBEDDING_MODEL", "embed-english-v3.0"),
-            "texts": list(texts),
-            "input_type": os.getenv("HOSTED_EMBED_INPUT_TYPE", "search_document"),
-            "embedding_types": ["float"],
-        }
-        h = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
-        req = urllib.request.Request(url, data=_json.dumps(payload).encode(), headers=h)
-        data = _json.loads(urllib.request.urlopen(req, timeout=30).read())
-        return data["embeddings"]["float"]
-    except Exception as e:
-        log.warning("cohere embed failed: %s", e)
-        return None
-
-
-def _jina_embed(texts: List[str]) -> Optional[List[List[float]]]:
-    key = os.getenv("JINA_API_KEY", "").strip()
-    if not key:
-        return None
-    try:
-        url = "https://api.jina.ai/v1/embeddings"
-        payload = {"model": os.getenv("HOSTED_EMBEDDING_MODEL", "jina-embeddings-v3"), "input": list(texts)}
-        h = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
-        req = urllib.request.Request(url, data=_json.dumps(payload).encode(), headers=h)
-        data = _json.loads(urllib.request.urlopen(req, timeout=30).read())
-        return [r["embedding"] for r in sorted(data["data"], key=lambda d: d.get("index", 0))]
-    except Exception as e:
-        log.warning("jina embed failed: %s", e)
+        log.warning("remote embed failed for dialect %s (%s)", dialect, e)
+        if dialect == "orchestrator":
+            _fire_wake()
         return None
 
 
@@ -149,14 +191,28 @@ _local_embedder = None
 
 def _local_embed(texts: List[str], model: Optional[str] = None) -> Optional[List[List[float]]]:
     global _local_embedder
+    m = model or os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")
     try:
         from sentence_transformers import SentenceTransformer
-        m = model or os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")
-        if _local_embedder is None:
+        if _local_embedder is None or getattr(_local_embedder, "_name", "") != m:
             _local_embedder = SentenceTransformer(m)
+            _local_embedder._name = m
         return _local_embedder.encode(texts, normalize_embeddings=True).tolist()
     except Exception as e:
-        log.warning("local embed failed: %s", e)
+        log.warning("local embed failed for model %s: %s", m, e)
+        
+        # Fallback to local lightweight option if BAAI/bge-large-en-v1.5 fails
+        fallback = "all-MiniLM-L6-v2"
+        if m != fallback:
+            try:
+                log.info("Attempting local fallback to lightweight model: %s", fallback)
+                from sentence_transformers import SentenceTransformer
+                if _local_embedder is None or getattr(_local_embedder, "_name", "") != fallback:
+                    _local_embedder = SentenceTransformer(fallback)
+                    _local_embedder._name = fallback
+                return _local_embedder.encode(texts, normalize_embeddings=True).tolist()
+            except Exception as fe:
+                log.warning("local fallback embed failed: %s", fe)
         return None
 
 
@@ -169,16 +225,19 @@ def embed(texts: List[str], model: Optional[str] = None) -> Optional[List[List[f
         return []
     if _use_local():
         return _local_embed(texts, model)
-    # Remote chain
-    vecs = _orchestrator_embed(texts, model)
+
+    url = _remote_endpoint()
+    if not url:
+        # Fall back to local if remote endpoint is not configured but we are in remote mode
+        if os.getenv("USE_LOCAL_EMBEDDER", "false").lower() == "true":
+            return _local_embed(texts, model)
+        return None
+
+    token = _remote_token()
+    vecs = _call_remote_embed(url, token, texts, model)
     if vecs and len(vecs) == len(texts):
         return vecs
-    vecs = _cohere_embed(texts)
-    if vecs and len(vecs) == len(texts):
-        return vecs
-    vecs = _jina_embed(texts)
-    if vecs and len(vecs) == len(texts):
-        return vecs
+
     if os.getenv("USE_LOCAL_EMBEDDER", "false").lower() == "true":
         return _local_embed(texts, model)
     log.warning("All embed providers failed — caller should degrade gracefully")
