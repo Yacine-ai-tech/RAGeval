@@ -1,7 +1,7 @@
 import UserGuidePage from './pages/UserGuidePage';
 import BenchmarkPage from './pages/BenchmarkPage';
 import ApiDocsPage from './pages/ApiDocsPage';
-import { Component, ReactNode, lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { Component, ReactNode, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark, BookOpen } from "lucide-react";
 import { AppShell } from "./kit/AppShell";
@@ -88,10 +88,11 @@ const NAV = [
 export default function App() {
   const [health, setHealth] = useState<"ok" | "down" | "checking">("checking");
   const [attempts, setAttempts] = useState(0);
+  const everConnected = useRef(false);
 
   const check = useCallback(() => {
     setHealth("checking");
-    api.health().then(() => setHealth("ok")).catch(() => setHealth("down"));
+    api.health().then(() => { everConnected.current = true; setHealth("ok"); }).catch(() => setHealth("down"));
   }, []);
 
   useEffect(() => { check(); }, [check, attempts]);
@@ -106,7 +107,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppShell product="RAGeval" tagline="LLMOps Observability" nav={NAV} health={health}>
-        {health !== "ok" && !(health === "checking" && attempts === 0) ? (
+        {health === "down" && attempts >= 6 && !everConnected.current ? (
           <WakingBackend waking={attempts < 6} onRetry={() => setAttempts(0)} />
         ) : (
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
