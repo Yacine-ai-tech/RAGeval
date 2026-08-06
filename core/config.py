@@ -42,7 +42,10 @@ class Settings:
         ).split(",") if m.strip()
     ]
 
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+    INFERENCE_MODE = os.getenv("INFERENCE_MODE", "remote")
+    EMBEDDING_ENDPOINT = os.getenv("EMBEDDING_ENDPOINT", "https://api-inference.huggingface.co/models/BAAI/bge-m3")
+    INFERENCE_TOKEN = os.getenv("INFERENCE_TOKEN", "")
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -53,24 +56,18 @@ class Settings:
 settings = Settings()
 
 
-# Gemini model fallback — when OPENAI_API_KEY is absent but GEMINI_API_KEY is
-# present, any LLM model string referencing OpenAI/GPT is remapped to Gemini
-# Flash automatically, requiring no code changes when switching providers.
-def _apply_gemini_fallback():
-    openai_key = getattr(settings, "OPENAI_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
-    gemini_key = getattr(settings, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
-    
-    if not openai_key and gemini_key:
-        def fallback(model_str):
-            if model_str and ("openai" in model_str.lower() or "gpt-" in model_str.lower()):
-                return "gemini/gemini-2.5-flash"
-            return model_str
-            
-        for attr in dir(settings):
-            if attr.startswith("LLM_") and isinstance(getattr(settings, attr), str):
-                setattr(settings, attr, fallback(getattr(settings, attr)))
-        
-        if hasattr(settings, "JUDGE_MODELS") and isinstance(settings.JUDGE_MODELS, list):
-            settings.JUDGE_MODELS = [fallback(m) for m in settings.JUDGE_MODELS]
+def _validate_keys():
+    keys = [
+        settings.GROQ_API_KEY,
+        settings.ANTHROPIC_API_KEY,
+        settings.OPENAI_API_KEY,
+        settings.GEMINI_API_KEY,
+    ]
+    set_keys_count = sum(1 for k in keys if k)
+    if set_keys_count < 2:
+        print("Warning: Fewer than 2 LLM API keys configured (GROQ_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY).")
 
-_apply_gemini_fallback()
+
+_validate_keys()
+
+

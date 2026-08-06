@@ -47,3 +47,16 @@ def test_decorator_wraps_function():
         return "stub answer"
 
     assert callable(fn)
+
+
+def test_validate_keys(monkeypatch, capsys):
+    from core import config
+    import importlib
+    monkeypatch.setattr(config.settings, "GROQ_API_KEY", "")
+    monkeypatch.setattr(config.settings, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(config.settings, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(config.settings, "GEMINI_API_KEY", "")
+    config._validate_keys()
+    captured = capsys.readouterr()
+    assert "Warning: Fewer than 2 LLM API keys configured" in captured.out
+
