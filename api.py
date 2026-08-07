@@ -38,6 +38,7 @@ from rageval.store import (
     init_rageval_table,
     log_interaction,
 )
+from rageval.otel_exporter import init_otel
 
 log = get_logger(__name__)
 
@@ -140,6 +141,7 @@ async def dashboard():
 # Initialize DB on import
 try:
     init_rageval_table()
+    init_otel()
 except Exception as e:
     log.warning("DB init failed at import: %s", e)
 

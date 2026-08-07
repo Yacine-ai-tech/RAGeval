@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rageval._compat import settings, get_logger  # self-contained (works when pip-installed)
+from rageval.otel_exporter import export_span
 
 log = get_logger(__name__)
 
@@ -136,6 +137,16 @@ async def log_interaction(
         json.dumps(flags), session_id, int(bool(scores.get("needs_review")))
     )
     _execute(sql, params)
+    
+    export_span("rag_interaction", {
+        "query": query,
+        "persona": persona or "none",
+        "model": scores.get("model") or "unknown",
+        "relevance": scores.get("relevance") or 0.0,
+        "groundedness": scores.get("groundedness") or 0.0,
+        "latency_ms": scores.get("latency_ms") or 0.0,
+        "needs_review": bool(scores.get("needs_review"))
+    })
 
 def get_metrics(days: int = 7) -> Dict[str, Any]:
     """Aggregate metrics over the last N days."""
