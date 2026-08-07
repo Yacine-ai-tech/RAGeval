@@ -112,24 +112,30 @@ class RAGEvaluator:
     _LAST_EMBED_WAKE = 0.0
 
     def _remote_embed(self, texts: List[str], model: Optional[str] = None):
-        """Embed via the Lightning inference backend (LIGHTNING_EMBED_URL) so small (512MB) hosts
-        don't OOM loading torch. Sends `model` so the Studio embeds with the requested model (real
-        multi-model comparison). Returns a numpy array or None; on failure wakes the Studio."""
-        url = os.getenv("LIGHTNING_EMBED_URL", "").strip()
+        """Embed via the inference backend (EMBEDDING_ENDPOINT) using httpx if INFERENCE_MODE == 'remote'."""
+        if os.getenv("INFERENCE_MODE", "").strip().lower() != "remote":
+            return None
+            
+        url = os.getenv("EMBEDDING_ENDPOINT", "").strip()
         if not url:
             return None
+            
         try:
-            import json as _j, urllib.request
+            import httpx
             h = {"Content-Type": "application/json", "User-Agent": "RAGeval/1.0 (+https://ysiddo-ai-projects.app)"}
             tk = os.getenv("INFERENCE_TOKEN", "").strip()
             if tk:
                 h["Authorization"] = "Bearer " + tk
+                
             payload = {"texts": texts}
             if model:
                 payload["model"] = model
-            req = urllib.request.Request(url.rstrip("/") + "/embed", data=_j.dumps(payload).encode(), headers=h)
-            vecs = _j.loads(urllib.request.urlopen(req, timeout=float(os.getenv("LIGHTNING_EMBED_TIMEOUT", "30"))).read())["embeddings"]
-            return np.asarray(vecs)
+                
+            with httpx.Client(timeout=float(os.getenv("LIGHTNING_EMBED_TIMEOUT", "30"))) as client:
+                resp = client.post(url.rstrip("/") + "/embed", json=payload, headers=h)
+                resp.raise_for_status()
+                vecs = resp.json()["embeddings"]
+                return np.asarray(vecs)
         except Exception as e:
             log.warning("remote embed unavailable (%s) — degrading + waking studio", e)
             self._wake_studio()
@@ -240,37 +246,55 @@ class RAGEvaluator:
         return float(np.mean(sims))
 
     async def _judge_groundedness(self, answer: str, context: str, model: str) -> Optional[float]:
-        """One LLM judge call. Returns a float 0-1, or ``None`` when the judge is unavailable
-        (LiteLLM missing, or the provider errors — e.g. a model whose API key isn't set). A
-        ``None`` judge is SKIPPED by the consensus rather than counted, so an unconfigured judge
-        (say OpenAI before you add the key) never pollutes the score or triggers false review flags."""
-        if not _LITELLM:
-            return None  # judge unavailable → skip (do not inject a fake 0.5)
-        try:
-            resp = await acompletion(
-                model=model,
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        "Is this answer fully supported by the context? "
-                        "Score 0.0-1.0 (0=hallucinated, 1=fully grounded). "
-                        "Return ONLY the float number, nothing else.\n\n"
-                        f"Answer: {answer[:2000]}\n\nContext: {context[:4000]}"
-                    ),
-                }],
-                temperature=0.0,
-            )
-            content = (resp.choices[0].message.content or "").strip()
-            # Parse the score: prefer a DECIMAL (0.85 / 1.0) — the actual score format — so we
-            # don't grab the leading "0" from prose like "on a 0-1 scale". Fall back to a bare 0/1.
-            import re
-            clean = content.replace("0.0-1.0", "").replace("0=hallucinated", "").replace("1=fully grounded", "")
-            m = re.search(r"(?<![.\d])(?:0?\.\d+|1\.0+)(?![.\d])", clean) or re.search(r"\b[01]\b", clean)
-            return max(0.0, min(1.0, float(m.group()))) if m else None
-        except Exception as e:
-            # Missing API key / provider error → treat as an unavailable judge (skip), not 0.5.
-            log.warning("judge %s unavailable (skipped): %s", model, e)
-            return None
+        """One LLM judge call. Returns a float 0-1, or ``None`` when the judge is unavailable."""
+        prompt = (
+            "Is this answer fully supported by the context? "
+            "Score 0.0-1.0 (0=hallucinated, 1=fully grounded). "
+            "Return ONLY the float number, nothing else.\n\n"
+            f"Answer: {answer[:2000]}\n\nContext: {context[:4000]}"
+        )
+
+        if model.startswith("gemini/"):
+            try:
+                from google import genai
+                from google.genai import types
+                import asyncio
+                
+                client = genai.Client(http_options={"api_version": "v1beta"})
+                actual_model = model.split("gemini/", 1)[-1]
+                
+                resp = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=actual_model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(temperature=0.0)
+                )
+                content = (resp.text or "").strip()
+            except ImportError:
+                log.warning("google-genai not installed, skipping gemini judge")
+                return None
+            except Exception as e:
+                log.warning("gemini judge %s unavailable (skipped): %s", model, e)
+                return None
+        else:
+            if not _LITELLM:
+                return None
+            try:
+                resp = await acompletion(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.0,
+                )
+                content = (resp.choices[0].message.content or "").strip()
+            except Exception as e:
+                log.warning("judge %s unavailable (skipped): %s", model, e)
+                return None
+
+        # Parse the score
+        import re
+        clean = content.replace("0.0-1.0", "").replace("0=hallucinated", "").replace("1=fully grounded", "")
+        m = re.search(r"(?<![.\d])(?:0?\.\d+|1\.0+)(?![.\d])", clean) or re.search(r"\b[01]\b", clean)
+        return max(0.0, min(1.0, float(m.group()))) if m else None
 
     async def score_groundedness_consensus(self, answer: str, context: str) -> Dict[str, Any]:
         """Multi-judge consensus across the JUDGE_MODELS that are actually reachable. Judges whose
