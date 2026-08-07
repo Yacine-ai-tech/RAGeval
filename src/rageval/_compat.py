@@ -24,7 +24,7 @@ class _Settings:
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     LOG_FORMAT = os.getenv("LOG_FORMAT", "%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
-    RAGEVAL_STORE = os.getenv("RAGEVAL_STORE", "sqlite")
+    RAGEVAL_STORE = os.getenv("RAGEVAL_STORE", "postgres")
     RAGEVAL_DB_PATH = os.getenv("RAGEVAL_DB_PATH", str(RAGEVAL_HOME / "rageval.db"))
     POSTGRES_URL = os.getenv("POSTGRES_URL", "")
     RAGEVAL_OTEL_ENDPOINT = os.getenv("RAGEVAL_OTEL_ENDPOINT", "")
@@ -34,10 +34,10 @@ class _Settings:
     JUDGE_MODELS = [
         m.strip() for m in os.getenv(
             "JUDGE_MODELS",
-            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,gemini/gemini-1.5-flash",
+            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,gemini/gemini-2.5-flash,openai/gpt-4o-mini",
         ).split(",") if m.strip()
     ]
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
