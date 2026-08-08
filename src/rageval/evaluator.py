@@ -284,6 +284,7 @@ class RAGEvaluator:
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.0,
+                    fallbacks=[getattr(settings, "LLM_DEFAULT", "groq/llama-3.3-70b-versatile")]
                 )
                 content = (resp.choices[0].message.content or "").strip()
             except Exception as e:
