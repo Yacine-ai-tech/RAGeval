@@ -72,7 +72,7 @@ export default function App() {
               <Route path="/cost" element={<Cost />} />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/instrumentation" element={<Instrumentation />} />
-              <Route path="/api-docs" element={<ApiDocsPage />} />
+              <Route path="/api-docs" element={<ApiDocs />} />
               <Route path="/benchmark" element={<BenchmarkPage />} />
               <Route path="/user-guide" element={<UserGuidePage />} />
               <Route path="*" element={<Overview />} />
