@@ -10,10 +10,11 @@ import { test, expect, Page } from '@playwright/test';
 const BASE_URL = process.env.RAGEVAL_URL    || process.env.TEST_BASE_URL || '/';
 const API_URL  = process.env.RAGEVAL_API_URL || '/';
 const AUTH_URL = process.env.INTELAI_API_URL || '/';
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
 
 async function getAuthToken(request: any): Promise<string> {
   const resp = await request.post(`${AUTH_URL}/api/login`, {
-    data: { username: 'admin', password: '***REMOVED-SECRET***' }
+    data: { username: 'admin', password: ADMIN_PASS }
   }).catch(() => null);
   if (resp && resp.ok()) {
     const body = await resp.json();
