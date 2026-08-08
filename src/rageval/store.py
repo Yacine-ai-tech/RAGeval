@@ -137,11 +137,31 @@ async def log_interaction(
     )
     _execute(sql, params)
 
-def get_metrics(days: int = 7) -> Dict[str, Any]:
+def _demo_session_scoping_enabled() -> bool:
+    return os.environ.get("DEMO_SESSION_SCOPING", "true").lower() == "true"
+
+
+def _scope_clause(session_id: Optional[str]) -> tuple[str, tuple]:
+    """Rows with no session_id are platform telemetry (e.g. IntelAI's own dogfooding calls)
+    and stay visible to everyone; rows tied to a specific visitor session are only visible
+    to that same session. Anonymous demo isolation, not production auth — see
+    DEMO_SESSION_SCOPING in .env.example."""
+    if not _demo_session_scoping_enabled():
+        return "", ()
+    return "(session_id IS NULL OR session_id = ?)", (session_id,)
+
+
+def get_metrics(days: int = 7, session_id: Optional[str] = None) -> Dict[str, Any]:
     """Aggregate metrics over the last N days."""
     from datetime import timedelta
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    rows = _execute("SELECT * FROM rageval_log WHERE timestamp >= ?", (cutoff,), fetchall=True)
+    scope_sql, scope_params = _scope_clause(session_id)
+    sql = "SELECT * FROM rageval_log WHERE timestamp >= ?"
+    params: tuple = (cutoff,)
+    if scope_sql:
+        sql += f" AND {scope_sql}"
+        params += scope_params
+    rows = _execute(sql, params, fetchall=True)
     if not rows:
         return {
             "total_queries": 0, "avg_relevance": 0.0, "avg_groundedness": 0.0,
@@ -161,28 +181,36 @@ def get_metrics(days: int = 7) -> Dict[str, Any]:
         "query_volume_by_hour": [],
     }
 
-def get_query_log(limit: int = 50, needs_review: Optional[bool] = None) -> List[Dict[str, Any]]:
+def get_query_log(limit: int = 50, needs_review: Optional[bool] = None, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
     sql = "SELECT * FROM rageval_log"
+    conditions: List[str] = []
     params: tuple = ()
     if needs_review is not None:
-        sql += " WHERE needs_review = ?"
-        params = (1 if needs_review else 0,)
+        conditions.append("needs_review = ?")
+        params = (*params, 1 if needs_review else 0)
+    scope_sql, scope_params = _scope_clause(session_id)
+    if scope_sql:
+        conditions.append(scope_sql)
+        params = (*params, *scope_params)
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
     sql += " ORDER BY id DESC LIMIT ?"
     params = (*params, limit)
     rows = _execute(sql, params, fetchall=True)
     return rows or []
 
-def get_cost_report(days: int = 30) -> Dict[str, Any]:
+def get_cost_report(days: int = 30, session_id: Optional[str] = None) -> Dict[str, Any]:
     from datetime import timedelta
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     is_pg = bool(settings.POSTGRES_URL)
     date_expr = "DATE(timestamp)" if is_pg else "date(timestamp)"
+    scope_sql, scope_params = _scope_clause(session_id)
     sql = f"""
-        SELECT {date_expr} AS day, model, SUM(cost_usd) AS cost 
-        FROM rageval_log WHERE timestamp >= ? 
+        SELECT {date_expr} AS day, model, SUM(cost_usd) AS cost
+        FROM rageval_log WHERE timestamp >= ? {"AND " + scope_sql if scope_sql else ""}
         GROUP BY day, model
     """
-    rows = _execute(sql, (cutoff,), fetchall=True)
+    rows = _execute(sql, (cutoff, *scope_params), fetchall=True)
     daily: Dict[str, float] = {}
     by_model: Dict[str, float] = {}
     total = 0.0

@@ -75,9 +75,23 @@ export type ScorePayload = {
 const BASE = import.meta.env.VITE_API_BASE_URL || "";
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// One anonymous, per-browser id — keeps a visitor's own logged queries/scores from
+// showing up on another visitor's dashboard. Not an auth credential.
+function demoSessionId(): string {
+  const key = "demo_session_id";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
 async function req<T>(path: string, init?: RequestInit, retryCount = 0): Promise<T> {
   try {
-    const res = await fetch(BASE + path, init);
+    const headers = new Headers(init?.headers);
+    headers.set("X-Demo-Session-Id", demoSessionId());
+    const res = await fetch(BASE + path, { ...init, headers });
     if (!res.ok) {
       if (res.status >= 500 && retryCount < 5) {
         await delay(2000 * (retryCount + 1));
