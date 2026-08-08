@@ -176,7 +176,7 @@ class RetrievalBenchRequest(BaseModel):
 class EmbeddingComparisonRequest(BaseModel):
     queries: List[str]
     chunks: List[List[str]]
-    embedding_models: List[str] = ["BAAI/bge-large-en-v1.5", "sentence-transformers/all-MiniLM-L6-v2"]
+    embedding_models: List[str] = ["BAAI/bge-m3", "sentence-transformers/all-MiniLM-L6-v2"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
