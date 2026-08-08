@@ -1,6 +1,5 @@
 import UserGuidePage from './pages/UserGuidePage'
 import BenchmarkPage from './pages/BenchmarkPage';
-import ApiDocsPage from './pages/ApiDocsPage';
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark , BookOpen} from "lucide-react";
