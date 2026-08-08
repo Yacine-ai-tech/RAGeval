@@ -186,15 +186,24 @@ async def health() -> Dict[str, Any]:
     return {"status": "ok", "service": "rageval", "version": "0.1.0"}
 
 
+def _resolve_session_id(request: Request, body_session_id: Optional[str] = None) -> Optional[str]:
+    """A visitor's own browser sends X-Demo-Session-Id (set by the frontend); that takes
+    precedence since it can't be spoofed by a request body field. Service-to-service callers
+    (e.g. IntelAI's own chatbot dogfooding its RAG quality into this table) have no browser
+    session and pass session_id in the body instead — their rows stay platform-visible."""
+    return request.headers.get("X-Demo-Session-Id") or body_session_id
+
+
 @app.post("/eval/log")
-async def eval_log(req: LogRequest) -> Dict[str, Any]:
+async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
     _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona)
     scores = await evaluator.score_interaction(
         query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
         tokens_used=req.tokens_used, latency_ms=req.latency_ms,
         model=req.model, persona=req.persona,
     )
-    await log_interaction(req.query, req.answer, req.persona, scores, req.session_id)
+    session_id = _resolve_session_id(request, req.session_id)
+    await log_interaction(req.query, req.answer, req.persona, scores, session_id)
     c = scores.get("groundedness_consensus", {})
     _emit("interaction.scored", route="/eval/log", overall=scores.get("overall_quality"),
           judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=True)
@@ -234,23 +243,23 @@ async def eval_config() -> Dict[str, Any]:
 
 
 @app.get("/eval/metrics")
-async def eval_metrics(days: int = 7) -> Dict[str, Any]:
-    return get_metrics(days=days)
+async def eval_metrics(request: Request, days: int = 7) -> Dict[str, Any]:
+    return get_metrics(days=days, session_id=_resolve_session_id(request))
 
 
 @app.get("/eval/queries")
-async def eval_queries(limit: int = 50, needs_review: Optional[bool] = None) -> List[Dict[str, Any]]:
-    return get_query_log(limit=limit, needs_review=needs_review)
+async def eval_queries(request: Request, limit: int = 50, needs_review: Optional[bool] = None) -> List[Dict[str, Any]]:
+    return get_query_log(limit=limit, needs_review=needs_review, session_id=_resolve_session_id(request))
 
 
 @app.get("/eval/cost-report")
-async def eval_cost_report(days: int = 30) -> Dict[str, Any]:
-    return get_cost_report(days=days)
+async def eval_cost_report(request: Request, days: int = 30) -> Dict[str, Any]:
+    return get_cost_report(days=days, session_id=_resolve_session_id(request))
 
 
 @app.get("/eval/alerts")
-async def eval_alerts() -> Dict[str, Any]:
-    flagged = get_query_log(limit=50, needs_review=True)
+async def eval_alerts(request: Request) -> Dict[str, Any]:
+    flagged = get_query_log(limit=50, needs_review=True, session_id=_resolve_session_id(request))
     return {"flagged_count": len(flagged), "alerts": flagged[:10]}
 
 
