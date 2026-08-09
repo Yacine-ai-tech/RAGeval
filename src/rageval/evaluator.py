@@ -93,7 +93,7 @@ class RAGEvaluator:
     def _ensure_embedder(self):
         # Local SentenceTransformer (torch ~400MB resident) is OFF by default: loading it on a
         # 512MB host OOM-crashes the process (the /eval/score 502 we hit). Embedding scorers run
-        # via the remote Lightning backend (see _embed); set USE_LOCAL_EMBEDDER=true only where
+        # via the remote inference backend (see _embed); set USE_LOCAL_EMBEDDER=true only where
         # there's RAM headroom.
         if not _ST:
             return None
@@ -109,65 +109,41 @@ class RAGEvaluator:
             self._embedder = SentenceTransformer(self.embedding_model_name)
         return self._embedder
 
-    _LAST_EMBED_WAKE = 0.0
-
     def _remote_embed(self, texts: List[str], model: Optional[str] = None):
         """Embed via the inference backend (EMBEDDING_ENDPOINT) using httpx if INFERENCE_MODE == 'remote'."""
         if os.getenv("INFERENCE_MODE", "").strip().lower() != "remote":
             return None
-            
+
         url = os.getenv("EMBEDDING_ENDPOINT", "").strip()
         if not url:
             return None
-            
+
         try:
             import httpx
             h = {"Content-Type": "application/json", "User-Agent": "RAGeval/1.0 (+https://ysiddo-ai-projects.app)"}
             tk = os.getenv("INFERENCE_TOKEN", "").strip()
             if tk:
                 h["Authorization"] = "Bearer " + tk
-                
+
             payload = {"texts": texts}
             if model:
                 payload["model"] = model
-                
-            with httpx.Client(timeout=float(os.getenv("LIGHTNING_EMBED_TIMEOUT", "30"))) as client:
+
+            with httpx.Client(timeout=float(os.getenv("EMBED_TIMEOUT", "30"))) as client:
                 resp = client.post(url.rstrip("/") + "/embed", json=payload, headers=h)
                 resp.raise_for_status()
                 vecs = resp.json()["embeddings"]
                 return np.asarray(vecs)
         except Exception as e:
-            log.warning("remote embed unavailable (%s) — degrading + waking studio", e)
-            self._wake_studio()
+            log.warning("remote embed unavailable (%s)", e)
             return None
-
-    def _wake_studio(self):
-        """Fire-and-forget wake of the on-demand inference Studio (rate-limited)."""
-        import time as _t, threading
-        url = os.getenv("ORCHESTRATOR_URL", "").strip()
-        if not url or (_t.time() - RAGEvaluator._LAST_EMBED_WAKE) < 60:
-            return
-        RAGEvaluator._LAST_EMBED_WAKE = _t.time()
-        def _go():
-            try:
-                import json as _j, urllib.request
-                h = {"Content-Type": "application/json", "User-Agent": "RAGeval/1.0 (+https://ysiddo-ai-projects.app)"}
-                tk = os.getenv("ORCH_TOKEN", "").strip()
-                if tk:
-                    h["Authorization"] = "Bearer " + tk
-                urllib.request.urlopen(urllib.request.Request(url.rstrip("/") + "/wake",
-                    data=_j.dumps({"gpu": False}).encode(), headers=h), timeout=90)
-            except Exception:
-                import logging; logging.error('Unhandled exception', exc_info=True)
-                pass
-        threading.Thread(target=_go, daemon=True).start()
 
     def _hosted_embed(self, texts: List[str]):
         """Hosted embeddings backstop (Cohere ``/v2/embed`` by default, Jina ``/v1/embeddings``
-        alternate) so retrieval scoring stays real when the on-demand Lightning Studio is unreachable
+        alternate) so retrieval scoring stays real when the on-demand remote inference host is unreachable
         and torch isn't installed — survives on a 512MB host. Enabled by ``HOSTED_EMBED_PROVIDER``
         (cohere|jina) + the provider's free, no-card key. Returns np.ndarray or None. This is a
-        graceful fallback: true multi-model embedding comparison still uses the Studio (this path
+        graceful fallback: true multi-model embedding comparison still uses the remote inference host (this path
         always uses the hosted model, not self.embedding_model_name). Stdlib urllib only."""
         provider = os.getenv("HOSTED_EMBED_PROVIDER", "").strip().lower()
         if provider not in ("cohere", "jina"):
@@ -201,7 +177,7 @@ class RAGEvaluator:
             return None
 
     def _embed(self, texts: List[str]):
-        """Embed texts with THIS evaluator's model (self.embedding_model_name): remote Lightning
+        """Embed texts with THIS evaluator's model (self.embedding_model_name): remote inference
         backend first (off-box, no OOM), then a hosted API backstop (HOSTED_EMBED_PROVIDER), then a
         local model only if USE_LOCAL_EMBEDDER. Returns a numpy array or None (caller degrades to a
         neutral score)."""
@@ -210,7 +186,7 @@ class RAGEvaluator:
         remote = self._remote_embed(texts, model=self.embedding_model_name)
         if remote is not None and len(remote) == len(texts):
             return remote
-        # Hosted-API backstop: keeps relevance scoring real when the Studio is down (no torch needed).
+        # Hosted-API backstop: keeps relevance scoring real when the remote inference host is down (no torch needed).
         hosted = self._hosted_embed(texts)
         if hosted is not None and len(hosted) == len(texts):
             return hosted
@@ -234,7 +210,7 @@ class RAGEvaluator:
         return len(ta & tb) / len(ta)
 
     def score_retrieval_relevance(self, query: str, chunks: List[str]) -> float:
-        """Mean cosine(query, retrieved chunks) — embeds off-box via the Lightning backend.
+        """Mean cosine(query, retrieved chunks) — embeds off-box via the remote inference backend.
         Falls back to a lexical-overlap score when no embedder is available (so a base
         ``pip install`` returns a meaningful number instead of a silent 0.0)."""
         if not chunks:
@@ -318,7 +294,7 @@ class RAGEvaluator:
 
     def score_faithfulness(self, answer: str, chunks: List[str]) -> float:
         """Embedding-similarity NLI proxy: max similarity to any chunk, averaged over sentences.
-        Embeds off-box via the Lightning backend (one batched call); 0.0 when unavailable."""
+        Embeds off-box via the remote inference backend (one batched call); 0.0 when unavailable."""
         if not chunks or not answer.strip():
             return 0.0
         sentences = [s.strip() for s in answer.replace("!", ".").replace("?", ".").split(".") if s.strip()]

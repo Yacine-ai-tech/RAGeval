@@ -1,11 +1,12 @@
-# Lightweight dev compose for RAGeval — runs in the rageval Lightning Studio.
+# Lightweight dev compose for RAGeval — meant for a remote dev host (any on-demand
+# cloud box, a home server, etc.) — not just a local machine.
 # Uses SQLite by default (no database server needed).
 # BGE-large model (~1.3 GB) downloads on first use and caches in named volume.
 #
-# Usage inside the Studio:
+# Usage on the remote host:
 #   docker compose -f docker-compose.dev.yml up --build
 #
-# Reach it from the laptop: ssh -L 8003:localhost:8003 lightning-rageval
+# Reach it from your laptop: ssh -L 8003:localhost:8003 <your-remote-host>
 # Then: http://localhost:8003/health
 
 services:
