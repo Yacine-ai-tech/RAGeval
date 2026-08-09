@@ -21,7 +21,7 @@ export default function Overview() {
       .catch((e) => setErr(String(e)));
   }, [days]);
 
-  // The API's query_volume_by_hour is always empty (GAP_REPORT §2) — build the quality
+  // The API's query_volume_by_hour is always empty — build the quality
   // trend client-side from real query-log timestamps instead.
   const trend = useMemo(() => {
     if (!rows) return [];
