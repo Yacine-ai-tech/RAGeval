@@ -1,4 +1,4 @@
-name: ysiddo-ai-projects_vol1 — Render Deploy & E2E Smoke Tests
+name: RAGeval — Render Deploy & E2E Smoke Tests
 
 on:
   push:
@@ -257,7 +257,7 @@ jobs:
     steps:
       - name: Summary
         run: |
-          echo "## ysiddo-ai-projects_vol1 Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "## RAGeval Deployment Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Service | URL |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-----|" >> $GITHUB_STEP_SUMMARY
@@ -268,7 +268,7 @@ jobs:
           echo "| AgentKit | ${{ env.AGENTKIT_URL }} |" >> $GITHUB_STEP_SUMMARY
           echo "| StreamPulse | ${{ env.STREAMPULSE_URL }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⚡ Tests run on GitHub Actions runners. Lightning AI Studio is for GPU inference only." >> $GITHUB_STEP_SUMMARY
+          echo "⚡ Tests run on GitHub Actions runners. Any on-demand GPU host is for inference only." >> $GITHUB_STEP_SUMMARY
 
   # ═══════════════════════════════════════════════════════════════════════════
   # PHASE 7 — Integration Tests (Main Only)
