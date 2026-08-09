@@ -50,3 +50,5 @@ steps.md
 frontend/node_modules/
 !frontend/dist/
 !frontend/dist/**
+frontend/playwright-report/
+frontend/test-results/
