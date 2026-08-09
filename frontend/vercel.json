@@ -1,18 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/docs",
-      "destination": "https://gateway.ysiddo-ai-projects.app/rageval/docs"
-    },
-    {
-      "source": "/docs/(.*)",
-      "destination": "https://gateway.ysiddo-ai-projects.app/rageval/docs/$1"
-    },
-    {
-      "source": "/openapi.json",
-      "destination": "https://gateway.ysiddo-ai-projects.app/rageval/openapi.json"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
