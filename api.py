@@ -43,18 +43,43 @@ log = get_logger(__name__)
 
 app = FastAPI(title="RAGeval", version="0.1.0", description="Drop-in LLMOps observability.")
 
-# --- ETHICAL TELEMETRY ---
+# --- ETHICAL TELEMETRY (see TELEMETRY.md) ---
 import threading
 import requests
 import os
 import time
-import uuid
+import uuid as _uuid
+
+
+def _telemetry_instance_id() -> str:
+    """
+    A random, locally-generated install ID — NOT derived from MAC address or any other
+    hardware fingerprint. Persisted under LOGS_DIR so repeat startups of the same install
+    report the same ID (for dedup on the receiving end); delete the file to reset it.
+    See TELEMETRY.md for why this is a random UUID rather than a hardware-derived value.
+    """
+    id_file = os.path.join(settings.LOGS_DIR, ".telemetry_instance_id")
+    try:
+        if os.path.exists(id_file):
+            existing = open(id_file).read().strip()
+            if existing:
+                return existing
+    except Exception:
+        pass
+    new_id = _uuid.uuid4().hex[:16]
+    try:
+        with open(id_file, "w") as f:
+            f.write(new_id)
+    except Exception:
+        pass
+    return new_id
+
 
 def _send_telemetry():
     if os.environ.get("TELEMETRY_OPT_OUT", "").lower() in ("1", "true", "yes"):
         return
-    
-    lock_file = "/tmp/.ysiddo_telemetry.lock"
+
+    lock_file = os.path.join(settings.LOGS_DIR, ".telemetry_last_ping")
     try:
         if os.path.exists(lock_file):
             if time.time() - os.path.getmtime(lock_file) < 21600:
@@ -65,15 +90,22 @@ def _send_telemetry():
         pass
 
     try:
+        telemetry_url = os.environ.get(
+            "TELEMETRY_URL", "https://gateway.ysiddo-ai-projects.app/telemetry"
+        )
         if "log" in globals():
-            globals()["log"].info("📡 Anonymous telemetry ENABLED (set TELEMETRY_OPT_OUT=true to disable).")
+            globals()["log"].info(
+                "Anonymous telemetry ping to %s (set TELEMETRY_OPT_OUT=true to disable).", telemetry_url
+            )
         else:
             import logging
-            logging.info("📡 Anonymous telemetry ENABLED (set TELEMETRY_OPT_OUT=true to disable).")
-            
+            logging.info(
+                "Anonymous telemetry ping to %s (set TELEMETRY_OPT_OUT=true to disable).", telemetry_url
+            )
+
         requests.post(
-            "https://gateway.ysiddo-ai-projects.app/telemetry", 
-            json={"service": "RAGeval", "event": "startup", "instance_id": str(uuid.getnode())[:8]},
+            telemetry_url,
+            json={"service": "RAGeval", "event": "startup", "instance_id": _telemetry_instance_id()},
             timeout=2
         )
     except Exception:
