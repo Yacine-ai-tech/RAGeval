@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // Dev: `VITE_PROXY_TARGET=http://localhost:8000 npm run dev` proxies API calls to a
@@ -16,5 +17,10 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 900,
+  },
+  test: {
+    // e2e/ holds Playwright specs (npm run test:e2e) — vitest's default glob would
+    // otherwise also try to collect them and fail on the missing @playwright/test runtime.
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 });
