@@ -6,13 +6,17 @@ import react from "@vitejs/plugin-react";
 // running backend (local uvicorn or the live Render URL). Prod build is same-origin —
 // FastAPI serves dist/ itself.
 const target = process.env.VITE_PROXY_TARGET || "http://localhost:8000";
-const apiPaths = ["/health", "/eval", "/docs", "/openapi.json"];
+// Regex keys, not plain string prefixes: Vite's string-key proxy matching is a plain
+// prefix match, so a "/eval" key would also swallow the "/evaluate" client-side route
+// (any GET to /evaluate got silently proxied to the backend's /eval/* namespace instead
+// of falling through to the SPA) — anchor each to a path boundary instead.
+const apiPathPatterns = ["^/health$", "^/eval(/|$)", "^/docs$", "^/openapi\\.json$"];
 
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: Object.fromEntries(
-      apiPaths.map((p) => [p, { target, changeOrigin: true, secure: false }]),
+      apiPathPatterns.map((p) => [p, { target, changeOrigin: true, secure: false }]),
     ),
   },
   build: {

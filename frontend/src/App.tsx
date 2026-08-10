@@ -2,7 +2,7 @@ import UserGuidePage from './pages/UserGuidePage'
 import BenchmarkPage from './pages/BenchmarkPage';
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark , BookOpen} from "lucide-react";
+import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark, BookOpen, Award } from "lucide-react";
 import { AppShell } from "./kit/AppShell";
 import { WakingBackend } from "./kit/misc";
 import { Skeleton } from "./kit/primitives";
@@ -26,6 +26,7 @@ const NAV = [
   { to: "/traces", label: "Live Traces", icon: RadioTower },
   { to: "/evaluate", label: "Evaluate", icon: FlaskConical },
   { to: "/experiments", label: "Experiments", icon: Beaker },
+  { to: "/benchmark", label: "Benchmark", icon: Award },
   { to: "/saved", label: "Saved", icon: Bookmark },
   { to: "/models", label: "Models", icon: Boxes },
   { to: "/cost", label: "Cost", icon: CircleDollarSign },
