@@ -21,17 +21,10 @@ def test_cost_calculation():
     assert cost >= 0
 
 
-def test_store_init_idempotent(tmp_path, monkeypatch):
-    db = tmp_path / "rageval.db"
-    monkeypatch.setenv("RAGEVAL_DB_PATH", str(db))
-    # Re-import settings to pick up the patched env
-    import importlib
-    from core import config
-    importlib.reload(config)
-    from rageval.store import init_rageval_table
-    init_rageval_table()
-    init_rageval_table()  # idempotent
-    assert db.exists()
+def test_store_init_idempotent(sqlite_store):
+    sqlite_store.init_rageval_table()  # idempotent — already called once by the fixture
+    import os
+    assert os.path.exists(sqlite_store._db_path())
 
 
 def test_app_creates():

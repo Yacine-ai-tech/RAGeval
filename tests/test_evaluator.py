@@ -1,10 +1,20 @@
 """RAGEvaluator unit tests — pure cost math + scorer edge cases (no LLM / no models)."""
+import asyncio
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from rageval.evaluator import ANTHROPIC_PRICES, GROQ_PRICES, RAGEvaluator  # noqa: E402
+from rageval.evaluator import (  # noqa: E402
+    ANTHROPIC_PRICES,
+    GROQ_PRICES,
+    InsufficientJudgesError,
+    MIN_JUDGES_REQUIRED,
+    RAGEvaluator,
+)
+from rageval._compat import settings  # noqa: E402
 
 
 def test_calculate_cost_known_values():
@@ -30,3 +40,77 @@ def test_retrieval_relevance_empty_is_zero():
 def test_evaluator_instantiates_without_loading_models():
     ev = RAGEvaluator()
     assert ev._embedder is None  # lazy — no model load at construction
+
+
+def test_min_judges_required_is_two():
+    assert MIN_JUDGES_REQUIRED == 2
+
+
+def test_consensus_raises_when_fewer_than_two_judges_configured(monkeypatch):
+    """Config-time check: JUDGE_MODELS listing < 2 models is a hard error, not a
+    single-judge fallback."""
+    monkeypatch.setattr(settings, "JUDGE_MODELS", ["anthropic/claude-haiku-4-5"])
+    ev = RAGEvaluator()
+    with pytest.raises(InsufficientJudgesError):
+        asyncio.run(ev.score_groundedness_consensus("answer", "context"))
+
+
+def test_consensus_raises_when_configured_judges_zero(monkeypatch):
+    monkeypatch.setattr(settings, "JUDGE_MODELS", [])
+    ev = RAGEvaluator()
+    with pytest.raises(InsufficientJudgesError):
+        asyncio.run(ev.score_groundedness_consensus("answer", "context"))
+
+
+def test_consensus_raises_when_fewer_than_two_judges_respond(monkeypatch):
+    """Runtime check: 2+ judges configured but only 1 actually responds (bad key,
+    network error) still raises — no silent single-judge consensus, no swapping in a
+    different judge as a fallback."""
+    monkeypatch.setattr(settings, "JUDGE_MODELS", [
+        "anthropic/claude-haiku-4-5", "groq/llama-3.3-70b-versatile", "openai/gpt-4o-mini",
+    ])
+
+    async def _fake_judge(self, answer, context, model):
+        return 0.9 if model == "anthropic/claude-haiku-4-5" else None
+
+    monkeypatch.setattr(RAGEvaluator, "_judge_groundedness", _fake_judge)
+    ev = RAGEvaluator()
+    with pytest.raises(InsufficientJudgesError):
+        asyncio.run(ev.score_groundedness_consensus("answer", "context"))
+
+
+def test_consensus_succeeds_with_exactly_two_responding_judges(monkeypatch):
+    monkeypatch.setattr(settings, "JUDGE_MODELS", [
+        "anthropic/claude-haiku-4-5", "groq/llama-3.3-70b-versatile",
+    ])
+
+    async def _fake_judge(self, answer, context, model):
+        return 0.9 if "anthropic" in model else 0.7
+
+    monkeypatch.setattr(RAGEvaluator, "_judge_groundedness", _fake_judge)
+    ev = RAGEvaluator()
+    result = asyncio.run(ev.score_groundedness_consensus("answer", "context"))
+    assert result["judges_used"] == 2
+    assert result["consensus"] == pytest.approx(0.8)
+
+
+def test_judge_call_has_no_fallback_model_param(monkeypatch):
+    """_judge_groundedness must not pass litellm's fallbacks= — a configured judge is
+    used as-is or skipped, never silently swapped for a different model."""
+    captured = {}
+
+    async def _fake_acompletion(**kwargs):
+        captured.update(kwargs)
+        class _Msg:
+            content = "0.8"
+        class _Choice:
+            message = _Msg()
+        class _Resp:
+            choices = [_Choice()]
+        return _Resp()
+
+    import rageval.evaluator as evaluator_mod
+    monkeypatch.setattr(evaluator_mod, "acompletion", _fake_acompletion)
+    ev = RAGEvaluator()
+    asyncio.run(ev._judge_groundedness("answer", "context", model="groq/llama-3.3-70b-versatile"))
+    assert "fallbacks" not in captured
