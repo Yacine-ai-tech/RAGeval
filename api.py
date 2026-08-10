@@ -30,7 +30,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from rageval.evaluator import RAGEvaluator
+from rageval.evaluator import RAGEvaluator, InsufficientJudgesError
 from rageval.store import (
     get_cost_report,
     get_metrics,
@@ -121,7 +121,9 @@ import os as _os
 
 @app.middleware("http")
 async def verify_internal_token(request: Request, call_next):
-    # Allow health checks and public auth routes
+    # Allow health checks. The /api/v1/auth/ exemption is shared boilerplate with the
+    # other OmniIntel services (IntelAI defines real routes there) — RAGeval itself has
+    # no such routes, so this branch is a no-op here, not a live auth bypass.
     if request.url.path in ["/health", "/docs", "/openapi.json", "/api/redoc"] or request.url.path.startswith("/api/v1/auth/"):
         return await call_next(request)
         
@@ -229,11 +231,14 @@ def _resolve_session_id(request: Request, body_session_id: Optional[str] = None)
 @app.post("/eval/log")
 async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
     _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona)
-    scores = await evaluator.score_interaction(
-        query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
-        tokens_used=req.tokens_used, latency_ms=req.latency_ms,
-        model=req.model, persona=req.persona,
-    )
+    try:
+        scores = await evaluator.score_interaction(
+            query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
+            tokens_used=req.tokens_used, latency_ms=req.latency_ms,
+            model=req.model, persona=req.persona,
+        )
+    except InsufficientJudgesError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     session_id = _resolve_session_id(request, req.session_id)
     await log_interaction(req.query, req.answer, req.persona, scores, session_id)
     c = scores.get("groundedness_consensus", {})
@@ -245,11 +250,14 @@ async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
 @app.post("/eval/score")
 async def eval_score(req: ScoreRequest) -> Dict[str, Any]:
     _emit("interaction.received", route="/eval/score", query=req.query[:120], persona=req.persona)
-    scores = await evaluator.score_interaction(
-        query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
-        tokens_used=req.tokens_used, latency_ms=req.latency_ms,
-        model=req.model, persona=req.persona,
-    )
+    try:
+        scores = await evaluator.score_interaction(
+            query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
+            tokens_used=req.tokens_used, latency_ms=req.latency_ms,
+            model=req.model, persona=req.persona,
+        )
+    except InsufficientJudgesError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     c = scores.get("groundedness_consensus", {})
     _emit("interaction.scored", route="/eval/score", overall=scores.get("overall_quality"),
           judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=False)
