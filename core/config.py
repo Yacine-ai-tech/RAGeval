@@ -26,6 +26,10 @@ class Settings:
     RAGEVAL_DB_PATH = os.getenv("RAGEVAL_DB_PATH", str(RAGEVAL_HOME / "rageval.db"))
     POSTGRES_URL = os.getenv("POSTGRES_URL", "")
     RAGEVAL_OTEL_ENDPOINT = os.getenv("RAGEVAL_OTEL_ENDPOINT", "")
+    # Vector column width for the Postgres/pgvector production tier. Must match the
+    # output dimension of EMBEDDING_MODEL below (1024 fits bge-large/bge-m3/arctic-embed-l;
+    # override if you configure a different-dimension embedding model).
+    RAGEVAL_EMBEDDING_DIM = int(os.getenv("RAGEVAL_EMBEDDING_DIM", "1024"))
 
     LLM_DEFAULT = os.getenv("LLM_DEFAULT", "groq/llama-3.3-70b-versatile")
     LLM_JUDGE = os.getenv("LLM_JUDGE", "anthropic/claude-haiku-4-5")
