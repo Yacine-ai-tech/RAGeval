@@ -36,6 +36,15 @@ except ImportError:
     _LITELLM = False
 
 
+# Multi-judge consensus requires at least this many configured judges — a single judge
+# isn't consensus, and RAGeval never substitutes one judge for another as a fallback.
+MIN_JUDGES_REQUIRED = 2
+
+
+class InsufficientJudgesError(RuntimeError):
+    """Raised when fewer than MIN_JUDGES_REQUIRED LLM judges are configured/reachable."""
+
+
 # Pricing per 1M tokens (input, output), approximate Mar-2026 values
 GROQ_PRICES = {
     "groq/llama-3.3-70b-versatile": (0.59, 0.79),
@@ -110,7 +119,10 @@ class RAGEvaluator:
         return self._embedder
 
     def _remote_embed(self, texts: List[str], model: Optional[str] = None):
-        """Embed via the inference backend (EMBEDDING_ENDPOINT) using httpx if INFERENCE_MODE == 'remote'."""
+        """Embed via a generic remote inference endpoint (EMBEDDING_ENDPOINT), provider-agnostic:
+        any host implementing POST {url}/embed with {"texts": [...], "model": "..."} ->
+        {"embeddings": [...]} — a Hugging Face Inference endpoint, a self-hosted GPU box, or
+        anything else speaking this contract. Only active when INFERENCE_MODE=remote."""
         if os.getenv("INFERENCE_MODE", "").strip().lower() != "remote":
             return None
 
@@ -120,7 +132,7 @@ class RAGEvaluator:
 
         try:
             import httpx
-            h = {"Content-Type": "application/json", "User-Agent": "RAGeval/1.0 (+https://ysiddo-ai-projects.app)"}
+            h = {"Content-Type": "application/json", "User-Agent": "RAGeval/1.0"}
             tk = os.getenv("INFERENCE_TOKEN", "").strip()
             if tk:
                 h["Authorization"] = "Bearer " + tk
@@ -138,58 +150,17 @@ class RAGEvaluator:
             log.warning("remote embed unavailable (%s)", e)
             return None
 
-    def _hosted_embed(self, texts: List[str]):
-        """Hosted embeddings backstop (Cohere ``/v2/embed`` by default, Jina ``/v1/embeddings``
-        alternate) so retrieval scoring stays real when the on-demand remote inference host is unreachable
-        and torch isn't installed — survives on a 512MB host. Enabled by ``HOSTED_EMBED_PROVIDER``
-        (cohere|jina) + the provider's free, no-card key. Returns np.ndarray or None. This is a
-        graceful fallback: true multi-model embedding comparison still uses the remote inference host (this path
-        always uses the hosted model, not self.embedding_model_name). Stdlib urllib only."""
-        provider = os.getenv("HOSTED_EMBED_PROVIDER", "").strip().lower()
-        if provider not in ("cohere", "jina"):
-            return None
-        key = os.getenv("COHERE_API_KEY" if provider == "cohere" else "JINA_API_KEY", "").strip()
-        if not key:
-            return None
-        try:
-            import json as _j, urllib.request
-            timeout = float(os.getenv("HOSTED_EMBED_TIMEOUT", "30"))
-            h = {"Content-Type": "application/json", "Authorization": "Bearer " + key}
-            if provider == "cohere":
-                url = os.getenv("COHERE_BASE_URL", "https://api.cohere.com").rstrip("/") + "/v2/embed"
-                payload = {"model": os.getenv("HOSTED_EMBEDDING_MODEL", "embed-english-v3.0"),
-                           "texts": list(texts),
-                           "input_type": os.getenv("HOSTED_EMBED_INPUT_TYPE", "search_document"),
-                           "embedding_types": ["float"]}
-                req = urllib.request.Request(url, data=_j.dumps(payload).encode(), headers=h)
-                data = _j.loads(urllib.request.urlopen(req, timeout=timeout).read())
-                vecs = data["embeddings"]["float"]
-            else:  # jina (OpenAI-compatible embeddings schema)
-                url = "https://api.jina.ai/v1/embeddings"
-                payload = {"model": os.getenv("HOSTED_EMBEDDING_MODEL", "jina-embeddings-v3"),
-                           "input": list(texts)}
-                req = urllib.request.Request(url, data=_j.dumps(payload).encode(), headers=h)
-                data = _j.loads(urllib.request.urlopen(req, timeout=timeout).read())
-                vecs = [r["embedding"] for r in sorted(data["data"], key=lambda d: d.get("index", 0))]
-            return np.asarray(vecs)
-        except Exception as e:
-            log.warning("hosted embed unavailable (%s) — degrading", e)
-            return None
-
     def _embed(self, texts: List[str]):
-        """Embed texts with THIS evaluator's model (self.embedding_model_name): remote inference
-        backend first (off-box, no OOM), then a hosted API backstop (HOSTED_EMBED_PROVIDER), then a
-        local model only if USE_LOCAL_EMBEDDER. Returns a numpy array or None (caller degrades to a
-        neutral score)."""
+        """Embed texts with THIS evaluator's model (self.embedding_model_name): a generic remote
+        endpoint first (EMBEDDING_ENDPOINT/INFERENCE_MODE, provider-agnostic — off-box, no OOM),
+        then a local model only if USE_LOCAL_EMBEDDER is set (downloads self.embedding_model_name
+        directly on this host). Returns a numpy array or None (caller degrades to a lexical-overlap
+        score, never a hardcoded vendor-specific fallback)."""
         if not texts:
             return None
         remote = self._remote_embed(texts, model=self.embedding_model_name)
         if remote is not None and len(remote) == len(texts):
             return remote
-        # Hosted-API backstop: keeps relevance scoring real when the remote inference host is down (no torch needed).
-        hosted = self._hosted_embed(texts)
-        if hosted is not None and len(hosted) == len(texts):
-            return hosted
         emb = self._ensure_embedder()
         if emb is None:
             return None
@@ -256,11 +227,12 @@ class RAGEvaluator:
             if not _LITELLM:
                 return None
             try:
+                # No fallbacks= here on purpose: each configured judge is used as-is or
+                # skipped, never silently swapped for a different model.
                 resp = await acompletion(
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.0,
-                    fallbacks=[getattr(settings, "LLM_DEFAULT", "groq/llama-3.3-70b-versatile")]
                 )
                 content = (resp.choices[0].message.content or "").strip()
             except Exception as e:
@@ -274,22 +246,42 @@ class RAGEvaluator:
         return max(0.0, min(1.0, float(m.group()))) if m else None
 
     async def score_groundedness_consensus(self, answer: str, context: str) -> Dict[str, Any]:
-        """Multi-judge consensus across the JUDGE_MODELS that are actually reachable. Judges whose
-        provider key isn't configured are skipped, so the score reflects only real votes."""
+        """Multi-judge consensus across the configured JUDGE_MODELS. Requires at least
+        MIN_JUDGES_REQUIRED configured judges — no single-judge fallback and no swapping
+        one judge for another. If a listed judge doesn't respond (missing key, network
+        error) it's skipped, but the run still needs at least MIN_JUDGES_REQUIRED real
+        votes to produce a consensus; short of that, this raises rather than returning a
+        quietly-degraded score."""
+        if len(settings.JUDGE_MODELS) < MIN_JUDGES_REQUIRED:
+            raise InsufficientJudgesError(
+                f"RAGeval requires at least {MIN_JUDGES_REQUIRED} configured LLM judges "
+                f"(JUDGE_MODELS lists {len(settings.JUDGE_MODELS)}: {settings.JUDGE_MODELS}). "
+                "Set JUDGE_MODELS to two or more of the supported providers "
+                "(anthropic/..., groq/..., gemini/..., openai/...)."
+            )
+
         scores: List[Dict[str, Any]] = []
         for model in settings.JUDGE_MODELS:
             s = await self._judge_groundedness(answer, context, model=model)
             if s is not None:                       # skip unavailable/unconfigured judges
                 scores.append({"model": model, "score": s})
+
+        if len(scores) < MIN_JUDGES_REQUIRED:
+            attempted = ", ".join(settings.JUDGE_MODELS)
+            raise InsufficientJudgesError(
+                f"Only {len(scores)} of {len(settings.JUDGE_MODELS)} configured judges "
+                f"responded (need at least {MIN_JUDGES_REQUIRED}). No fallback between "
+                f"judges — check API keys/connectivity for: {attempted}"
+            )
+
         nums = [s["score"] for s in scores]
         stdev = statistics.stdev(nums) if len(nums) > 1 else 0.0
         return {
-            "consensus": statistics.mean(nums) if nums else 0.0,
+            "consensus": statistics.mean(nums),
             "stdev": stdev,
             "judges": scores,
             "judges_used": len(scores),
-            # Only flag disagreement when at least two real judges voted.
-            "flag_for_review": len(nums) > 1 and stdev > 0.2,
+            "flag_for_review": stdev > 0.2,
         }
 
     def score_faithfulness(self, answer: str, chunks: List[str]) -> float:
@@ -381,6 +373,16 @@ class RAGEvaluator:
         if scope_violations:
             flags.append("PERSONA_SCOPE_VIOLATION")
 
+        # Query embedding for pgvector storage (Postgres production tier only — see
+        # store.py). One extra embed call, gated on POSTGRES_URL so the default SQLite
+        # path never pays for it. None when no embedder is reachable; store.py then
+        # just skips the column.
+        query_embedding: Optional[List[float]] = None
+        if settings.POSTGRES_URL:
+            vecs = self._embed([query])
+            if vecs is not None and len(vecs) == 1:
+                query_embedding = [float(x) for x in vecs[0]]
+
         return {
             "relevance": relevance,
             "groundedness": groundedness,
@@ -395,4 +397,5 @@ class RAGEvaluator:
             "overall_quality": overall_quality,
             "flags": flags,
             "needs_review": bool(flags),
+            "query_embedding": query_embedding,
         }

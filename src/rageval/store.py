@@ -39,7 +39,21 @@ CREATE INDEX IF NOT EXISTS idx_rageval_review ON rageval_log(needs_review);
 CREATE INDEX IF NOT EXISTS idx_rageval_model ON rageval_log(model);
 """
 
-_SCHEMA_PG = """
+def _schema_pg() -> str:
+    """Postgres schema, production tier. Adds a pgvector column that stores each
+    interaction's query embedding (populated in log_interaction when POSTGRES_URL is
+    set — see evaluator.score_interaction), so retrieval-relevance queries can use
+    Postgres-native vector similarity instead of recomputing embeddings from scratch.
+    Requires the pgvector extension (Postgres 13+, pgvector 0.5+ for the HNSW index).
+
+    The embedding column and its index are added via ALTER/CREATE-INDEX-IF-NOT-EXISTS
+    rather than folded into CREATE TABLE — CREATE TABLE IF NOT EXISTS is a no-op on an
+    already-existing table (true for any real deployment upgrading from a pre-pgvector
+    version), so a column defined only inside it would silently never get added.
+    """
+    dim = settings.RAGEVAL_EMBEDDING_DIM
+    return f"""
+CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS rageval_log (
     id SERIAL PRIMARY KEY,
     timestamp TIMESTAMPTZ NOT NULL,
@@ -57,9 +71,12 @@ CREATE TABLE IF NOT EXISTS rageval_log (
     session_id TEXT,
     needs_review INTEGER DEFAULT 0
 );
+ALTER TABLE rageval_log ADD COLUMN IF NOT EXISTS query_embedding vector({dim});
 CREATE INDEX IF NOT EXISTS idx_rageval_ts ON rageval_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_rageval_review ON rageval_log(needs_review);
 CREATE INDEX IF NOT EXISTS idx_rageval_model ON rageval_log(model);
+CREATE INDEX IF NOT EXISTS idx_rageval_embedding ON rageval_log
+    USING hnsw (query_embedding vector_cosine_ops);
 """
 
 def _db_path() -> str:
@@ -106,7 +123,7 @@ def _execute(sql: str, params: tuple = (), fetchall: bool = False, is_script: bo
 def init_rageval_table() -> None:
     """Initialize the rageval_log table (idempotent)."""
     is_pg = bool(settings.POSTGRES_URL)
-    _execute(_SCHEMA_PG if is_pg else _SCHEMA_SQLITE, is_script=True)
+    _execute(_schema_pg() if is_pg else _SCHEMA_SQLITE, is_script=True)
     log.info("rageval_log initialized (%s)", "postgres" if is_pg else settings.RAGEVAL_DB_PATH)
 
 async def log_interaction(
@@ -116,26 +133,33 @@ async def log_interaction(
     scores: Optional[Dict[str, Any]] = None,
     session_id: Optional[str] = None,
 ) -> None:
-    """Persist a single interaction."""
-    from datetime import timedelta
+    """Persist a single interaction. On the Postgres tier, also stores the query
+    embedding (scores["query_embedding"], a list[float] — see evaluator.score_interaction)
+    in the pgvector column when present; SQLite has no such column and this is skipped."""
     scores = scores or {}
     flags = scores.get("flags", [])
-    sql = """
-        INSERT INTO rageval_log
-          (timestamp, query, answer, persona, model,
-           relevance, groundedness, faithfulness,
-           cost_usd, latency_ms, tokens_used,
-           flags, session_id, needs_review)
-        VALUES (?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?)
-    """
-    params = (
+    cols = ["timestamp", "query", "answer", "persona", "model",
+            "relevance", "groundedness", "faithfulness",
+            "cost_usd", "latency_ms", "tokens_used",
+            "flags", "session_id", "needs_review"]
+    values = (
         datetime.now(timezone.utc).isoformat(),
         query, answer, persona, scores.get("model"),
         scores.get("relevance"), scores.get("groundedness"), scores.get("faithfulness"),
         scores.get("cost_usd"), scores.get("latency_ms"), scores.get("tokens_used"),
-        json.dumps(flags), session_id, int(bool(scores.get("needs_review")))
+        json.dumps(flags), session_id, int(bool(scores.get("needs_review"))),
     )
-    _execute(sql, params)
+
+    embedding = scores.get("query_embedding") if bool(settings.POSTGRES_URL) else None
+    if embedding:
+        cols = cols + ["query_embedding"]
+        placeholders = ", ".join(["?"] * (len(cols) - 1) + ["?::vector"])
+        values = values + ("[" + ",".join(repr(float(x)) for x in embedding) + "]",)
+    else:
+        placeholders = ", ".join(["?"] * len(cols))
+
+    sql = f"INSERT INTO rageval_log ({', '.join(cols)}) VALUES ({placeholders})"
+    _execute(sql, values)
 
 def _demo_session_scoping_enabled() -> bool:
     return os.environ.get("DEMO_SESSION_SCOPING", "true").lower() == "true"
