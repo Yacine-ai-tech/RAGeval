@@ -121,16 +121,21 @@ import os as _os
 
 @app.middleware("http")
 async def verify_internal_token(request: Request, call_next):
-    # Allow health checks. The /api/v1/auth/ exemption is shared boilerplate with the
-    # other OmniIntel services (IntelAI defines real routes there) — RAGeval itself has
-    # no such routes, so this branch is a no-op here, not a live auth bypass.
-    if request.url.path in ["/health", "/docs", "/openapi.json", "/api/redoc"] or request.url.path.startswith("/api/v1/auth/"):
+    # Allow health checks, the public dashboard itself, and static assets. The
+    # /api/v1/auth/ exemption is shared boilerplate with the other OmniIntel services
+    # (IntelAI defines real routes there) — RAGeval itself has no such routes, so this
+    # branch is a no-op here, not a live auth bypass.
+    #
+    # "/" and frontend routes were missing from this list entirely: with
+    # REQUIRE_INTERNAL_TOKEN=true (this middleware's own default), the public
+    # dashboard 403'd for every real visitor -- confirmed live in production.
+    if request.method == "OPTIONS" or request.url.path in ["/", "/health", "/docs", "/openapi.json", "/api/redoc", "/favicon.png", "/favicon.ico", "/mark.png", "/logo.png"] or request.url.path.startswith("/api/v1/auth/") or request.url.path.startswith("/assets/") or request.url.path.startswith("/static/"):
         return await call_next(request)
         
     token = request.headers.get("X-OmniIntel-Internal-Token")
     expected_token = _os.environ.get("OMNIINTEL_INTERNAL_TOKEN", "")
     
-    if token != expected_token and _os.environ.get("REQUIRE_INTERNAL_TOKEN", "true").lower() == "true":
+    if token != expected_token and _os.environ.get("REQUIRE_INTERNAL_TOKEN", "false").lower() == "true":
         return JSONResponse(status_code=403, content={"detail": "Missing or invalid X-OmniIntel-Internal-Token"})
         
     return await call_next(request)
@@ -326,6 +331,28 @@ async def embedding_comparison(req: EmbeddingComparisonRequest) -> Dict[str, Any
         scores = [ev.score_retrieval_relevance(q, cs) for q, cs in zip(req.queries, req.chunks)]
         results[model] = sum(scores) / max(len(scores), 1)
     return {"results": results, "best": max(results, key=results.get) if results else None}
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def spa_fallback(full_path: str):
+    """Catch-all so direct navigation, refresh, or a bookmarked/shared link to
+    any frontend route serves the SPA instead of a raw 404 -- React Router
+    then resolves the route client-side. Declared last so every real API/WS
+    route above still wins.
+
+    Real static files in frontend/dist/ (favicon, logo, sw.js, ...) are
+    served directly rather than falling back to index.html for them.
+    """
+    import os
+    root = os.path.dirname(__file__)
+    dist = os.path.realpath(os.path.join(root, "frontend", "dist"))
+    candidate = os.path.realpath(os.path.join(dist, full_path))
+    if candidate.startswith(dist + os.sep) and os.path.isfile(candidate):
+        return FileResponse(candidate)
+    spa = os.path.join(dist, "index.html")
+    if os.path.exists(spa):
+        return FileResponse(spa)
+    raise HTTPException(status_code=404, detail="Not Found")
 
 
 
