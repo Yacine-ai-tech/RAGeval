@@ -2,11 +2,13 @@
 
 Public API (lazily imported so ``import rageval`` stays light and config/env
 overrides are honoured at first use):
-    track               decorator that auto-logs any RAG function call
-    RAGEvaluator        relevance / groundedness / faithfulness / cost scorers
-    init_rageval_table  initialise the (SQLite-default) store
-    log_interaction     persist a scored interaction
-    get_metrics         aggregate metrics for the dashboard / API
+    track                 decorator that auto-logs any RAG function call
+    RAGEvaluator          relevance / groundedness / faithfulness / cost scorers
+    init_rageval_table    initialise the (SQLite-default) store
+    log_interaction       persist a scored interaction
+    get_metrics           aggregate metrics for the dashboard / API
+    log_dspy_run          persist a DSPy compilation run as a RAGeval event
+    dspy_compile_callback decorator that logs a DSPy compilation automatically
 """
 
 try:  # single source of truth = the installed distribution version
@@ -25,6 +27,8 @@ __all__ = [
     "init_rageval_table",
     "log_interaction",
     "get_metrics",
+    "log_dspy_run",
+    "dspy_compile_callback",
 ]
 
 
@@ -42,4 +46,8 @@ def __getattr__(name: str):
         from rageval import store
 
         return getattr(store, name)
+    if name in {"log_dspy_run", "dspy_compile_callback"}:
+        from rageval import dspy_integration
+
+        return getattr(dspy_integration, name)
     raise AttributeError(f"module 'rageval' has no attribute {name!r}")
