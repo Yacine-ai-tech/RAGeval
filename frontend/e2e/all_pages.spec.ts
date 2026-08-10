@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 
 const BASE_URL = process.env.TEST_BASE_URL || '';
 
-const ROUTES = ['/', '/evaluate', '/experiments', '/traces', '/queries', '/models', '/alerts', '/cost', '/saved', '/instrumentation'];
+const ROUTES = ['/', '/evaluate', '/experiments', '/benchmark', '/traces', '/queries', '/models',
+  '/alerts', '/cost', '/saved', '/instrumentation', '/api-docs', '/user-guide'];
 
 test.describe('RAGeval All Pages E2E Suite', () => {
 
