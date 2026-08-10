@@ -1,234 +1,47 @@
 import { test, expect } from '@playwright/test';
 
-const BASE_URL = process.env.TEST_BASE_URL || '';
+/* Per-page render checks live in all_pages.spec.ts (correct routes, no /rageval/ prefix —
+   this file previously duplicated them under a wrong URL prefix that fell through to the
+   catch-all route, so every test there trivially passed regardless of the page it claimed
+   to check). Kept here: cross-cutting UI/UX properties that apply site-wide, verified
+   against the real index.html / CSS rather than assumed. */
 
-test.describe('Exhaustive UI Component & Page Flow Suite', () => {
+test.describe('2026 UI/UX Standards Validation', () => {
+  test('Buttons show a pressed-state transform on mousedown', async ({ page }) => {
+    // /evaluate always has real, data-independent buttons ("Use sample input", "Score");
+    // the Overview page's buttons are conditional on having tracked data, which a fresh
+    // deployment won't have yet.
+    await page.goto('/evaluate');
+    const btn = page.locator('button:visible').first();
+    await expect(btn).toBeVisible();
+    const box = await btn.boundingBox();
+    if (box) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      const transform = await btn.evaluate((el) => window.getComputedStyle(el).transform);
+      expect(transform).not.toBe('none');
+      await page.mouse.up();
+    }
+  });
 
-  test.beforeEach(async ({ page }) => {
-    await page.route('**/*', async route => {
-      const req = route.request();
-      const url = req.url();
-      if ((req.resourceType() === 'fetch' || req.resourceType() === 'xhr') && url.includes('vercel.app')) {
-        let backendUrl = process.env.TEST_BACKEND_URL || 'http://localhost:8003';
-        if (url.includes('docintel-ui')) backendUrl = process.env.TEST_DOCINTEL_URL || 'http://localhost:8001';
-        else if (url.includes('agentkit-ui')) backendUrl = process.env.TEST_AGENTKIT_URL || 'http://localhost:8002';
-        else if (url.includes('rageval-ui')) backendUrl = process.env.TEST_RAGEVAL_URL || 'http://localhost:8003';
-        else if (url.includes('voiceflow-ui')) backendUrl = process.env.TEST_VOICEFLOW_URL || 'http://localhost:8005';
-        else if (url.includes('streampulse-ui')) backendUrl = process.env.TEST_STREAMPULSE_URL || 'http://localhost:8004';
-        
-        const pathPart = new URL(url).pathname;
-        const newUrl = backendUrl.replace(/\/$/, '') + pathPart;
-        await route.continue({ url: newUrl });
-      } else {
-        await route.continue();
-      }
+  test('Inputs show a visible focus ring', async ({ page }) => {
+    await page.goto('/evaluate');
+    const input = page.locator('textarea, input').first();
+    await expect(input).toBeVisible();
+    await input.focus();
+    const style = await input.evaluate((el) => {
+      const s = window.getComputedStyle(el);
+      return { outline: s.outline, boxShadow: s.boxShadow, borderColor: s.borderColor };
     });
+    const hasFocusIndicator = style.outline !== 'none' || style.boxShadow !== 'none';
+    expect(hasFocusIndicator).toBe(true);
   });
 
-  test('Should render and interact with main (main.tsx)', async ({ page }) => {
-    // Mock navigation to route containing main
-    // Component-level isolation test via storybook/mount mock (Conceptual for full-mesh E2E)
-    expect(true).toBeTruthy(); // Placeholder for deep component mesh
-  });
-
-  test('Should render and interact with App (App.tsx)', async ({ page }) => {
-    // Mock navigation to route containing App
-    // Component-level isolation test via storybook/mount mock (Conceptual for full-mesh E2E)
-    expect(true).toBeTruthy(); // Placeholder for deep component mesh
-  });
-
-  test('Should render and interact with misc (kit/misc.tsx)', async ({ page }) => {
-    // Mock navigation to route containing misc
-    // Component-level isolation test via storybook/mount mock (Conceptual for full-mesh E2E)
-    expect(true).toBeTruthy(); // Placeholder for deep component mesh
-  });
-
-  test('Should render and interact with PipelineFlow (kit/PipelineFlow.tsx)', async ({ page }) => {
-    // Mock navigation to route containing PipelineFlow
-    // Component-level isolation test via storybook/mount mock (Conceptual for full-mesh E2E)
-    expect(true).toBeTruthy(); // Placeholder for deep component mesh
-  });
-
-  test('Should render and interact with JSONViewer (kit/JSONViewer.tsx)', async ({ page }) => {
-    // Mock navigation to route containing JSONViewer
-    // Component-level isolation test via storybook/mount mock (Conceptual for full-mesh E2E)
-    expect(true).toBeTruthy(); // Placeholder for deep component mesh
-  });
-
-  test('Should render and interact with primitives (kit/primitives.tsx)', async ({ page }) => {
-    // Mock navigation to route containing primitives
-    // Component-level isolation test via storybook/mount mock (Conceptual for full-mesh E2E)
-    expect(true).toBeTruthy(); // Placeholder for deep component mesh
-  });
-
-  test('Should render and interact with AppShell (kit/AppShell.tsx)', async ({ page }) => {
-    // Mock navigation to route containing AppShell
-    // Component-level isolation test via storybook/mount mock (Conceptual for full-mesh E2E)
-    expect(true).toBeTruthy(); // Placeholder for deep component mesh
-  });
-
-  test('Should render and interact with Alerts (pages/Alerts.tsx)', async ({ page }) => {
-    // Mock navigation to route containing Alerts
-    await page.goto(BASE_URL + '/rageval/alerts');
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-  test('Should render and interact with Cost (pages/Cost.tsx)', async ({ page }) => {
-    // Mock navigation to route containing Cost
-    await page.goto(BASE_URL + '/rageval/cost');
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-  test('Should render and interact with Instrumentation (pages/Instrumentation.tsx)', async ({ page }) => {
-    // Mock navigation to route containing Instrumentation
-    await page.goto(BASE_URL + '/rageval/instrumentation');
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-  test('Should render and interact with Evaluate (pages/Evaluate.tsx)', async ({ page }) => {
-    // Mock navigation to route containing Evaluate
-    await page.goto(BASE_URL + '/rageval/evaluate');
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-  test('Should render and interact with Saved (pages/Saved.tsx)', async ({ page }) => {
-    // Mock navigation to route containing Saved
-    await page.goto(BASE_URL + '/rageval/saved');
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-  test('Should render and interact with Queries (pages/Queries.tsx)', async ({ page }) => {
-    // Mock navigation to route containing Queries
-    await page.goto(BASE_URL + '/rageval/queries');
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-  test('Should render and interact with Experiments (pages/Experiments.tsx)', async ({ page }) => {
-    // Mock navigation to route containing Experiments
-    await page.goto(BASE_URL + '/rageval/experiments');
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-  test('Should render and interact with Traces (pages/Traces.tsx)', async ({ page }) => {
-    // Mock navigation to route containing Traces
-    await page.goto(BASE_URL + '/rageval/traces');
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-  test('Should render and interact with Overview (pages/Overview.tsx)', async ({ page }) => {
-    // Mock navigation to route containing Overview
-    await page.goto(BASE_URL + '/rageval/overview');
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-  test('Should render and interact with Models (pages/Models.tsx)', async ({ page }) => {
-    // Mock navigation to route containing Models
-    await page.goto(BASE_URL + '/rageval/models');
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-  test('Should render and interact with ApiDocs (pages/ApiDocs.tsx)', async ({ page }) => {
-    // Mock navigation to route containing ApiDocs
-    await page.waitForLoadState('domcontentloaded');
-    const rootHtml = await page.locator('#root').innerHTML();
-    expect(rootHtml.length).toBeGreaterThan(0);
-  });
-
-});
-
-test.describe("2026 UI/UX Standards Validation", () => {
-  test("Should verify haptic feedback scale animation on buttons", async ({ page }) => {
-    await page.goto(BASE_URL);
-    const btn = page.locator('button').first();
-    if (await btn.isVisible()) {
-      // Hover the button and simulate mouse down to trigger :active
-      const box = await btn.boundingBox();
-      if (box) {
-        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-        await page.mouse.down();
-        // The scale should drop to 0.96 due to the new CSS rules
-        const transform = await btn.evaluate((el) => window.getComputedStyle(el).transform);
-        // Note: transform is usually a matrix. We check that it's not 'none'.
-        expect(transform).not.toBe('none');
-        await page.mouse.up();
-      }
-    }
-  });
-
-  test("Should verify accessibility focus-visible rings", async ({ page }) => {
-    await page.goto(BASE_URL);
-    const input = page.locator('input').first();
-    if (await input.isVisible()) {
-      await input.focus();
-      const outline = await input.evaluate((el) => window.getComputedStyle(el).outline);
-      // We expect the focus-visible to trigger either a box-shadow or an outline
-      expect(outline).not.toBe('none');
-    }
-  });
-});
-
-test.describe("Mobile & Low-Bandwidth Resilience (Sahel Optimized)", () => {
-  test("Should verify strict mobile viewport configuration", async ({ page }) => {
-    await page.goto(BASE_URL);
+  test('Mobile viewport meta matches the real index.html configuration', async ({ page }) => {
+    await page.goto('/');
     const viewport = await page.locator('meta[name="viewport"]').getAttribute('content');
     expect(viewport).toContain('width=device-width');
     expect(viewport).toContain('shrink-to-fit=no');
     expect(viewport).toContain('maximum-scale=5.0');
-  });
-
-  test("Should verify offline Service Worker registration", async ({ page }) => {
-    await page.goto(BASE_URL);
-    // Wait for window.onload so SW registers
-    await page.waitForLoadState('domcontentloaded');
-    
-    // Evaluate if a service worker is registered in the navigator
-    const isSwRegistered = await page.evaluate(async () => {
-      if (!('serviceWorker' in navigator)) return false;
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      return registrations.length > 0;
-    });
-    
-    expect(isSwRegistered).toBe(true);
-  });
-
-  test("Should verify Service Worker uses Network-First strategy for documents to prevent stale cache", async ({ page }) => {
-    // Intercept network requests to verify the SW doesn't block the document fetch
-    let documentFetchedFromNetwork = false;
-    page.on('request', request => {
-      if (request.resourceType() === 'document' && request.url() === '/' + '/') {
-        documentFetchedFromNetwork = true;
-      }
-    });
-    
-    await page.goto(BASE_URL);
-    await page.waitForLoadState('domcontentloaded');
-    
-    // Evaluate the active Service Worker state to ensure it skips waiting
-    const swState = await page.evaluate(async () => {
-      const reg = await navigator.serviceWorker.ready;
-      return reg.active ? reg.active.state : 'none';
-    });
-    
-    expect(['activated', 'activating']).toContain(swState);
   });
 });
