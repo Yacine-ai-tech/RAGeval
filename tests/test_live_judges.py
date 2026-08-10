@@ -27,7 +27,7 @@ def test_consensus_separates_grounded_from_hallucinated():
     h = asyncio.run(ev.score_groundedness_consensus(HALLUCINATED, CONTEXT))
     print(f"\nLIVE judges → grounded={g['consensus']:.2f} (stdev {g['stdev']:.2f}), "
           f"hallucinated={h['consensus']:.2f} (stdev {h['stdev']:.2f}), judges={len(g['judges'])}")
-    assert len(g["judges"]) >= 1               # real judges ran
+    assert len(g["judges"]) >= 2                # multi-judge consensus requires >= 2 real votes
     assert g["consensus"] > h["consensus"]     # grounded scores strictly higher
     assert g["consensus"] >= 0.6               # grounded is accepted
     assert h["consensus"] <= 0.6               # hallucinated is flagged-low
