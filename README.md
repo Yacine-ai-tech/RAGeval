@@ -10,7 +10,7 @@
 
 **Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
 
-Version: **v0.1.10** | `pip install omnismart-rageval`
+Version: **v0.1.15** | `pip install omnismart-rageval`
 > 🔗 **Live dashboard:** https://rageval.ysiddo-ai-projects.app/  ·  browser dashboard (score a query + view metrics).  Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
 > On-demand backend (first request ~30–60 s to wake).
 > Self-hosting: see [SELF_HOSTING.md](SELF_HOSTING.md).
@@ -32,7 +32,7 @@ That's it. Open the dashboard at `localhost:8003`.
 | Metric            | Definition                                                          |
 |-------------------|---------------------------------------------------------------------|
 | Retrieval relevance | Cosine sim between query and retrieved chunks (BGE-large by default) |
-| Groundedness consensus | Multi-judge LLM scoring (Claude Haiku 4.5 + Groq LLaMA 3.3 + GPT-5-mini), flags disagreement |
+| Groundedness consensus | Multi-judge LLM scoring across your configured `JUDGE_MODELS` (min. 2 — no single-judge fallback), flags disagreement |
 | Faithfulness      | Per-sentence max-similarity to any chunk (NLI proxy)                |
 | Cost              | USD per interaction, tracked by model                               |
 | Latency           | End-to-end wall-clock                                               |
@@ -52,7 +52,7 @@ That's it. Open the dashboard at `localhost:8003`.
 ## Quick Start
 
 ```bash
-pip install --index-url https://gateway.ysiddo-ai-projects.app/pypi/simple/ omnismart-rageval     # distribution name; CLI + import remain `rageval`
+pip install omnismart-rageval   # v0.1.15 — distribution name; CLI + import remain `rageval`
 rageval init                 # creates ~/.rageval/rageval.db
 rageval serve --port 8003
 ```
