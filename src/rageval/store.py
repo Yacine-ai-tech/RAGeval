@@ -122,9 +122,26 @@ def _execute(sql: str, params: tuple = (), fetchall: bool = False, is_script: bo
 
 def init_rageval_table() -> None:
     """Initialize the rageval_log table (idempotent)."""
+    global _initialized
     is_pg = bool(settings.POSTGRES_URL)
     _execute(_schema_pg() if is_pg else _SCHEMA_SQLITE, is_script=True)
     log.info("rageval_log initialized (%s)", "postgres" if is_pg else settings.RAGEVAL_DB_PATH)
+    _initialized = True
+
+
+_initialized = False
+
+
+def _ensure_initialized() -> None:
+    """Auto-create the table on first write. Without this, the drop-in @track decorator
+    (or any bare `from rageval import log_interaction` use with no api.py and no `rageval
+    init` run first) fails on a fresh install with "no such table: rageval_log" — the
+    README's whole "pip install, decorate, done" pitch depends on this working with zero
+    setup steps."""
+    global _initialized
+    if not _initialized:
+        init_rageval_table()
+
 
 async def log_interaction(
     query: str,
@@ -136,6 +153,7 @@ async def log_interaction(
     """Persist a single interaction. On the Postgres tier, also stores the query
     embedding (scores["query_embedding"], a list[float] — see evaluator.score_interaction)
     in the pgvector column when present; SQLite has no such column and this is skipped."""
+    _ensure_initialized()
     scores = scores or {}
     flags = scores.get("flags", [])
     cols = ["timestamp", "query", "answer", "persona", "model",
