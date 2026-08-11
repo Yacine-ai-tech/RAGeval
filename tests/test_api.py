@@ -14,10 +14,11 @@ def _client():
 
 
 def _internal_auth_headers() -> dict:
-    """The internal-token middleware gates every route except /health, /docs, and
-    /api/v1/auth/* (REQUIRE_INTERNAL_TOKEN=true by default). Reuse whatever real token
-    is configured in the environment so tests exercise the actual endpoint, not just
-    the 403 the middleware returns without it."""
+    """The internal-token middleware gates every route except /, /health, /docs, static
+    assets, and /api/v1/auth/* when REQUIRE_INTERNAL_TOKEN=true (opt-in, off by default —
+    the public dashboard itself needs to be reachable with no token). Reuse whatever real
+    token is configured in the environment so tests exercise the actual endpoint, not
+    just the pass-through/403 behavior of the gate."""
     token = os.environ.get("OMNIINTEL_INTERNAL_TOKEN", "")
     return {"X-OmniIntel-Internal-Token": token} if token else {}
 
