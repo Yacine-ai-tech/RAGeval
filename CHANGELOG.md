@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.17] - 2026-08-11
+### Fixed
+- **The "60-second pitch" was broken for any first-time user.** Nothing except `api.py`
+  (module-level import) or the `rageval init` CLI command ever called
+  `init_rageval_table()` — so `pip install omnismart-rageval` + `@track` on a fresh
+  install, with no API server ever run, failed on the very first call with
+  `sqlite3.OperationalError: no such table: rageval_log`. `log_interaction()` (used by
+  `@track`, `log_dspy_run`/`dspy_compile_callback`, and any bare library use) now
+  auto-initializes the table on first write, once per process. Caught by actually
+  testing the drop-in-library path end-to-end (wiring AgentKit's DSPy compile step to
+  this package) rather than assuming the README's own pitch worked.
+### Known gotcha (documented, not changed)
+- Embedding `rageval` as a library inside a host app that has its own `POSTGRES_URL` for
+  its own unrelated database will make `rageval` try to write to *that* database instead
+  of SQLite — `rageval._compat.settings.POSTGRES_URL` reads the same generic env var
+  name, so it collides whenever both use the convention. Workaround for now: unset/blank
+  `POSTGRES_URL` before importing `rageval`, or point it at a database that actually has
+  the `rageval_log` schema. A `RAGEVAL_POSTGRES_URL`-prefixed override would fix this
+  properly but changes the existing `.env.example` contract, so it's flagged rather than
+  changed in this pass.
+
 ## [0.1.16] - 2026-08-11
 ### Added
 - `_remote_embed` now dispatches on the `EMBEDDING_ENDPOINT` URL's own shape instead of
