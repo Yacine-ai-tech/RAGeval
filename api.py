@@ -14,6 +14,19 @@ Endpoints:
 """
 from __future__ import annotations
 
+import os as _os_early
+
+# One-time compat shim, scoped to this standalone-app process only: older/existing
+# deployments (e.g. this project's own Render service, configured via Render's
+# dashboard rather than this repo's .env) may still set POSTGRES_URL directly rather
+# than the newer RAGEVAL_POSTGRES_URL. core/config.py and rageval/_compat.py
+# deliberately no longer fall back to POSTGRES_URL themselves — that fallback is what
+# made `rageval`, when imported as a *library* elsewhere, silently adopt a host app's
+# own unrelated database. Doing the compat copy here instead, before either settings
+# module is imported, keeps that safety while not breaking this app's own deployment.
+if not _os_early.environ.get("RAGEVAL_POSTGRES_URL") and _os_early.environ.get("POSTGRES_URL"):
+    _os_early.environ["RAGEVAL_POSTGRES_URL"] = _os_early.environ["POSTGRES_URL"]
+
 import time
 from typing import Any, Dict, List, Optional
 

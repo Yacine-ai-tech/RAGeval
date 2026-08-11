@@ -10,7 +10,7 @@
 
 **Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
 
-Version: **v0.1.17** | `pip install omnismart-rageval`
+Version: **v0.1.18** | `pip install omnismart-rageval`
 > 🔗 **Live dashboard:** https://rageval.ysiddo-ai-projects.app/  ·  browser dashboard (score a query + view metrics).  Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
 > On-demand backend (first request ~30–60 s to wake).
 > Self-hosting: see [SELF_HOSTING.md](SELF_HOSTING.md).
@@ -52,7 +52,7 @@ That's it. Open the dashboard at `localhost:8003`.
 ## Quick Start
 
 ```bash
-pip install omnismart-rageval   # v0.1.17 — distribution name; CLI + import remain `rageval`
+pip install omnismart-rageval   # v0.1.18 — distribution name; CLI + import remain `rageval`
 rageval init                 # creates ~/.rageval/rageval.db
 rageval serve --port 8003
 ```

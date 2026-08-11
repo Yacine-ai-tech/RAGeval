@@ -26,7 +26,15 @@ class _Settings:
 
     RAGEVAL_STORE = os.getenv("RAGEVAL_STORE", "postgres")
     RAGEVAL_DB_PATH = os.getenv("RAGEVAL_DB_PATH", str(RAGEVAL_HOME / "rageval.db"))
-    POSTGRES_URL = os.getenv("POSTGRES_URL", "")
+    # RAGEVAL_POSTGRES_URL only — deliberately no fallback to a bare POSTGRES_URL here.
+    # This matters most in the installable-package settings: a fallback would make
+    # `rageval` silently adopt a host app's own, unrelated database whenever it's
+    # imported into a host that (reasonably) also uses the generic POSTGRES_URL name for
+    # itself — confirmed live: this exact fallback wrote rageval's schema into
+    # AgentKit's real production Postgres before being removed. The standalone RAGeval
+    # app (api.py) does its own one-time POSTGRES_URL->RAGEVAL_POSTGRES_URL compat shim
+    # at startup, scoped to just that process — this library-settings module never does.
+    POSTGRES_URL = os.getenv("RAGEVAL_POSTGRES_URL", "")
     RAGEVAL_OTEL_ENDPOINT = os.getenv("RAGEVAL_OTEL_ENDPOINT", "")
     RAGEVAL_EMBEDDING_DIM = int(os.getenv("RAGEVAL_EMBEDDING_DIM", "1024"))
 
