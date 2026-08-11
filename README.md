@@ -10,7 +10,7 @@
 
 **Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
 
-Version: **v0.1.15** | `pip install omnismart-rageval`
+Version: **v0.1.16** | `pip install omnismart-rageval`
 > 🔗 **Live dashboard:** https://rageval.ysiddo-ai-projects.app/  ·  browser dashboard (score a query + view metrics).  Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
 > On-demand backend (first request ~30–60 s to wake).
 > Self-hosting: see [SELF_HOSTING.md](SELF_HOSTING.md).
@@ -52,7 +52,7 @@ That's it. Open the dashboard at `localhost:8003`.
 ## Quick Start
 
 ```bash
-pip install omnismart-rageval   # v0.1.15 — distribution name; CLI + import remain `rageval`
+pip install omnismart-rageval   # v0.1.16 — distribution name; CLI + import remain `rageval`
 rageval init                 # creates ~/.rageval/rageval.db
 rageval serve --port 8003
 ```
@@ -95,7 +95,7 @@ def chain_invoke(query: str, context_chunks: list[str]):
 
 ## Tests
 
-38 test functions across smoke, API, evaluator, decorator, DSPy integration, store, and e2e:
+50 test functions across smoke, API, evaluator, decorator, DSPy integration, store, and e2e:
 
 ```bash
 pytest tests/ -q

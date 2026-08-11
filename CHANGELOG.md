@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.16] - 2026-08-11
+### Added
+- `_remote_embed` now dispatches on the `EMBEDDING_ENDPOINT` URL's own shape instead of
+  speaking only the generic contract: a `huggingface.co` URL is called in HF's native
+  Inference API shape (`{"inputs": [...]}` in, mean-pooling per-token responses when the
+  target is a plain feature-extraction pipeline rather than a sentence-embedding model).
+  Verified live against both a real Hugging Face Inference endpoint and a real on-demand
+  orchestrator host — not just unit-tested.
+### Fixed
+- Rewrote the e2e test suite (`rageval_telemetry.spec.ts`, `exhaustive_ui.spec.ts`)
+  against the real API/UI; the previous version tested a fictional `/api/*` surface and
+  UI flows (a Cost-page threshold slider, an Instrumentation config panel, etc.) that
+  don't exist in this app. All 29 UI + API e2e tests verified passing against a live
+  local instance before merging.
+- Vite's dev-server proxy (`vite.config.ts`) used a plain `/eval` string-prefix key,
+  which also silently swallowed the `/evaluate` client-side route — caught by an e2e
+  test actually navigating there, not by code review.
+- `frontend/src/App.tsx`: the Benchmark page (a real, implemented HaluEval results
+  write-up) had a route but was missing from the nav array.
+
 ## [0.1.15] - 2026-08-10
 ### Added
 - Multi-judge consensus now requires ≥2 configured judges; raises (HTTP 503 from
