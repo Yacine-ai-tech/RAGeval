@@ -31,7 +31,7 @@ def test_log_interaction_auto_initializes_table(monkeypatch):
     is the entire premise of the README's "pip install, decorate, done" pitch. Deliberately
     does NOT call init_rageval_table() first, unlike the sqlite_store fixture."""
     monkeypatch.setenv("RAGEVAL_DB_PATH", tempfile.mktemp(suffix="_rageval_uninitialized.db"))
-    monkeypatch.setenv("POSTGRES_URL", "")
+    monkeypatch.setenv("RAGEVAL_POSTGRES_URL", "")
 
     import core.config as app_config
     importlib.reload(app_config)
