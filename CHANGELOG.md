@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.18] - 2026-08-11
+### Fixed
+- **Resolves the 0.1.17 "known gotcha".** `core.config`/`rageval._compat` no longer fall
+  back to a bare `POSTGRES_URL` at all — they read `RAGEVAL_POSTGRES_URL` exclusively.
+  The fallback was the actual bug: it made `rageval`, embedded as a library, silently
+  adopt a host app's own unrelated Postgres whenever that host (reasonably) also used
+  the generic `POSTGRES_URL` name for itself. Confirmed live twice while fixing this —
+  the fallback wrote a real `rageval_log` table into another real project's production
+  database before being removed (cleaned up, verified zero rows remain).
+- This project's own standalone deployment (`api.py`, e.g. this repo's Render service,
+  which sets `POSTGRES_URL` via Render's dashboard rather than this repo's `.env`) keeps
+  working via a narrow, one-time `POSTGRES_URL`->`RAGEVAL_POSTGRES_URL` compat copy done
+  in `api.py` itself at process startup — that behavior is specific to this app's own
+  entrypoint and is not part of the `rageval` library other projects import.
+
 ## [0.1.17] - 2026-08-11
 ### Fixed
 - **The "60-second pitch" was broken for any first-time user.** Nothing except `api.py`
