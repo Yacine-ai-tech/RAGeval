@@ -94,6 +94,83 @@ def test_consensus_succeeds_with_exactly_two_responding_judges(monkeypatch):
     assert result["consensus"] == pytest.approx(0.8)
 
 
+class _FakeHttpxResponse:
+    def __init__(self, json_body):
+        self._json = json_body
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._json
+
+
+class _FakeHttpxClient:
+    """Captures the request _remote_embed actually sends, no network."""
+    last_url = None
+    last_json = None
+    respond_with = None
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def post(self, url, json, headers):
+        type(self).last_url = url
+        type(self).last_json = json
+        return _FakeHttpxResponse(type(self).respond_with)
+
+
+def test_remote_embed_dispatches_hf_native_shape(monkeypatch):
+    monkeypatch.setenv("INFERENCE_MODE", "remote")
+    hf_url = "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction"
+    monkeypatch.setenv("EMBEDDING_ENDPOINT", hf_url)
+    monkeypatch.setattr("httpx.Client", _FakeHttpxClient)
+    _FakeHttpxClient.respond_with = [[0.1, 0.2], [0.3, 0.4]]
+
+    ev = RAGEvaluator()
+    vecs = ev._remote_embed(["a", "b"])
+
+    assert _FakeHttpxClient.last_url == hf_url  # called as-is, no /embed suffix
+    assert _FakeHttpxClient.last_json == {"inputs": ["a", "b"]}  # HF's native shape
+    assert vecs.shape == (2, 2)
+
+
+def test_remote_embed_mean_pools_per_token_hf_response(monkeypatch):
+    """A plain feature-extraction pipeline (not a sentence-embedding model) returns one
+    vector per token — an extra nesting level that must be mean-pooled to one vector
+    per input text."""
+    monkeypatch.setenv("INFERENCE_MODE", "remote")
+    monkeypatch.setenv("EMBEDDING_ENDPOINT", "https://router.huggingface.co/hf-inference/models/x")
+    monkeypatch.setattr("httpx.Client", _FakeHttpxClient)
+    _FakeHttpxClient.respond_with = [[[1.0, 1.0], [3.0, 3.0]]]  # 1 text, 2 tokens, 2 dims
+
+    ev = RAGEvaluator()
+    vecs = ev._remote_embed(["one text"])
+
+    assert vecs.shape == (1, 2)
+    assert vecs[0].tolist() == [2.0, 2.0]  # mean of the two token vectors
+
+
+def test_remote_embed_dispatches_generic_contract(monkeypatch):
+    monkeypatch.setenv("INFERENCE_MODE", "remote")
+    monkeypatch.setenv("EMBEDDING_ENDPOINT", "https://orchestrator.example.com/api/inference")
+    monkeypatch.setattr("httpx.Client", _FakeHttpxClient)
+    _FakeHttpxClient.respond_with = {"embeddings": [[0.5, 0.6]]}
+
+    ev = RAGEvaluator(embedding_model="BAAI/bge-m3")
+    vecs = ev._remote_embed(["a"], model="BAAI/bge-m3")  # _embed() always passes model=
+
+    assert _FakeHttpxClient.last_url == "https://orchestrator.example.com/api/inference/embed"
+    assert _FakeHttpxClient.last_json == {"texts": ["a"], "model": "BAAI/bge-m3"}
+    assert vecs.shape == (1, 2)
+
+
 def test_judge_call_has_no_fallback_model_param(monkeypatch):
     """_judge_groundedness must not pass litellm's fallbacks= — a configured judge is
     used as-is or skipped, never silently swapped for a different model."""

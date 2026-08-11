@@ -119,10 +119,14 @@ class RAGEvaluator:
         return self._embedder
 
     def _remote_embed(self, texts: List[str], model: Optional[str] = None):
-        """Embed via a generic remote inference endpoint (EMBEDDING_ENDPOINT), provider-agnostic:
-        any host implementing POST {url}/embed with {"texts": [...], "model": "..."} ->
-        {"embeddings": [...]} — a Hugging Face Inference endpoint, a self-hosted GPU box, or
-        anything else speaking this contract. Only active when INFERENCE_MODE=remote."""
+        """Embed via a remote inference endpoint (EMBEDDING_ENDPOINT), provider-agnostic:
+        dispatches on the URL's own shape, not a named-vendor config flag. A
+        huggingface.co URL is called in HF's native Inference API shape
+        ({"inputs": [...]} in, a list of vectors — or per-token vectors, mean-pooled —
+        out); anything else is called via the generic POST {url}/embed contract
+        ({"texts": [...], "model": "..."} -> {"embeddings": [...]}) that a self-hosted
+        GPU box, an orchestrator, or any other compliant host can implement. Only active
+        when INFERENCE_MODE=remote."""
         if os.getenv("INFERENCE_MODE", "").strip().lower() != "remote":
             return None
 
@@ -137,11 +141,19 @@ class RAGEvaluator:
             if tk:
                 h["Authorization"] = "Bearer " + tk
 
-            payload = {"texts": texts}
-            if model:
-                payload["model"] = model
+            timeout = float(os.getenv("EMBED_TIMEOUT", "30"))
+            with httpx.Client(timeout=timeout) as client:
+                if "huggingface.co" in url:
+                    resp = client.post(url, json={"inputs": texts}, headers=h)
+                    resp.raise_for_status()
+                    arr = np.asarray(resp.json(), dtype=float)
+                    if arr.ndim == 3:  # per-token vectors from a plain feature-extraction
+                        arr = arr.mean(axis=1)  # pipeline (not a sentence-embedding model) — mean-pool
+                    return arr
 
-            with httpx.Client(timeout=float(os.getenv("EMBED_TIMEOUT", "30"))) as client:
+                payload = {"texts": texts}
+                if model:
+                    payload["model"] = model
                 resp = client.post(url.rstrip("/") + "/embed", json=payload, headers=h)
                 resp.raise_for_status()
                 vecs = resp.json()["embeddings"]
