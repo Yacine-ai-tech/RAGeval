@@ -42,6 +42,28 @@ def test_metrics_reads_offline():
     assert r.status_code in (200, 401, 403) and (r.status_code != 200 or isinstance(r.json(), dict))
 
 
+def test_api_compat_shim_copies_postgres_url_once(tmp_path):
+    """api.py's own startup shim (POSTGRES_URL -> RAGEVAL_POSTGRES_URL when the latter
+    isn't set) is scoped to this standalone app's process only — verified in a real
+    subprocess since api.py has almost certainly already been imported earlier in this
+    test session, and Python won't re-run a cached module's top-level code on a second
+    `import api`, which would make an in-process test of this meaningless."""
+    import subprocess
+    env = {
+        **os.environ,
+        "RAGEVAL_POSTGRES_URL": "",
+        "POSTGRES_URL": "postgresql://compat-shim-test/db",
+        "RAGEVAL_DB_PATH": str(tmp_path / "shim_test.db"),
+        "TELEMETRY_OPT_OUT": "true",
+    }
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "import api; import os; print('RAGEVAL_POSTGRES_URL=' + os.environ.get('RAGEVAL_POSTGRES_URL', ''))"],
+        cwd=str(Path(__file__).resolve().parent.parent), env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert "RAGEVAL_POSTGRES_URL=postgresql://compat-shim-test/db" in result.stdout, result.stderr
+
+
 def test_eval_score_returns_503_when_insufficient_judges(monkeypatch):
     """The InsufficientJudgesError -> HTTP 503 wiring, exercised through the real
     FastAPI request stack (middleware included), not just at the evaluator level."""
