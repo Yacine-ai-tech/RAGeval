@@ -43,7 +43,7 @@ const ENDPOINTS: Endpoint[] = [
     group: "Scoring",
     method: "POST",
     path: "/eval/score",
-    desc: "Score a query/answer/chunks triple across all 4 dimensions — relevance, groundedness (multi-judge consensus), faithfulness, and persona-scope compliance. Does NOT write to the history store; use this for stateless, on-the-fly scoring (e.g. a CI gate or a playground UI).",
+    desc: "Score a query/answer/chunks triple across all 4 dimensions — relevance, groundedness (multi-judge consensus), faithfulness, and persona-scope compliance. Does NOT write to the history store; use this for stateless, on-the-fly scoring (e.g. a CI gate or a playground UI). Requires >=2 configured judges to actually respond — with fewer, this returns 503 rather than a silently-degraded single-judge score (see Errors below).",
     body: `{
   "query": "What was Q2 gross margin?",
   "answer": "Q2 gross margin was 41.2%, up 3 points from Q1.",
@@ -79,14 +79,18 @@ const ENDPOINTS: Endpoint[] = [
   "persona_scope_violations": [],
   "overall_quality": 0.856,
   "flags": [],
-  "needs_review": false
-}`,
+  "needs_review": false,
+  "query_embedding": null
+}
+
+// 503 (fewer than 2 judges configured/reachable):
+// {"detail": "Only 1 of 3 configured judges responded (need at least 2). ..."}`,
   },
   {
     group: "Scoring",
     method: "POST",
     path: "/eval/log",
-    desc: "Same scoring pipeline as /eval/score, PLUS persists the interaction + scores to the history store (SQLite by default, Postgres if POSTGRES_URL is set). This is what the @track decorator and the drop-in SDK call under the hood. Optionally accepts session_id in the body — used by service-to-service callers (no browser) that want their rows kept platform-visible; browser callers should send X-Demo-Session-Id instead (see note above).",
+    desc: "Same scoring pipeline as /eval/score (same >=2 judge requirement, same 503 on failure), PLUS persists the interaction + scores to the history store (SQLite by default, Postgres if RAGEVAL_POSTGRES_URL is set). This is what the @track decorator and the drop-in SDK call under the hood. Optionally accepts session_id in the body — used by service-to-service callers (no browser) that want their rows kept platform-visible; browser callers should send X-Demo-Session-Id instead (see note above).",
     body: `{
   "query": "What was Q2 gross margin?",
   "answer": "Q2 gross margin was 41.2%, up 3 points from Q1.",
@@ -110,7 +114,8 @@ const ENDPOINTS: Endpoint[] = [
   "persona_scope_violations": [],
   "overall_quality": 0.856,
   "flags": [],
-  "needs_review": false
+  "needs_review": false,
+  "query_embedding": null  // a real [float, ...] vector instead of null when RAGEVAL_POSTGRES_URL (pgvector) is configured
 }`,
   },
   // ── Observability ───────────────────────────────────────────────────────
@@ -316,7 +321,7 @@ export default function ApiDocs() {
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,margin:"20px 0" }}>
         {[
           { icon: Globe, label:"Base URL", value:BASE_URL, color:"#38bdf8" },
-          { icon: Shield, label:"Auth", value:"X-OmniIntel-Internal-Token", color:"#4ade80" },
+          { icon: Shield, label:"Auth", value:"X-OmniIntel-Internal-Token (opt-in)", color:"#4ade80" },
           { icon: Zap, label:"Format", value:"REST / JSON", color:"#f59e0b" },
           { icon: BookOpen, label:"Latency", value:"<2s avg", color:"#a78bfa" },
         ].map(({icon:Icon,label,value,color}) => (
