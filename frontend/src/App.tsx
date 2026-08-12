@@ -55,7 +55,7 @@ export default function App() {
   }, [health, attempts]);
 
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AppShell product="RAGeval" tagline="LLMOps Observability" nav={NAV} health={health}>
         {health !== "ok" && !(health === "checking" && attempts === 0) ? (
           <WakingBackend waking={attempts < 6} onRetry={() => setAttempts(0)} />
