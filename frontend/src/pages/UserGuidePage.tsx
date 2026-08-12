@@ -74,7 +74,12 @@ export default function UserGuidePage() {
             the <code className="text-green-300">JUDGE_MODELS</code> env var, comma-separated) — the same
             question: "is this answer fully supported by the context?" Each judge returns a 0–1 score;
             judges whose provider key isn't configured are skipped, so the consensus only reflects
-            models that actually voted.
+            models that actually voted. There's no single-judge fallback and no swapping one judge for
+            another: consensus requires at least 2 judges to actually respond, both in how many are
+            configured and how many are reachable at score time. Fall short of that and{' '}
+            <code className="text-green-300">/eval/score</code> and{' '}
+            <code className="text-green-300">/eval/log</code> return an honest 503 instead of a quietly
+            degraded single-judge (or zero-judge) score.
           </p>
           <p>
             The mean across judges becomes the <code className="text-green-300">groundedness</code> score.
@@ -158,11 +163,15 @@ async def answer_question(query: str, context_chunks: list[str]) -> str:
         <Section icon={Sparkles} iconColor="text-pink-400" title="DSPy Compilation Telemetry">
           <p>
             If your RAG pipeline uses DSPy prompt/program compilation, RAGeval's{' '}
-            <code className="text-green-300">log_dspy_run()</code> helper persists each compilation run —
-            program name, candidate count, the winning candidate, and the optimization metric/score — into
-            the same history store as live traffic. That means prompt-optimization experiments show up
-            next to production interactions instead of in a separate silo, so you can see whether a DSPy
-            recompile actually moved the quality metrics you care about.
+            <code className="text-green-300">log_dspy_run()</code> helper (or the{' '}
+            <code className="text-green-300">@dspy_compile_callback</code> decorator, which wraps your
+            compile function and calls it for you) persists each compilation run — program name,
+            candidate count, the winning candidate, and the optimization metric/score — into the same
+            history store as live traffic. That means prompt-optimization experiments show up next to
+            production interactions instead of in a separate silo, so you can see whether a DSPy
+            recompile actually moved the quality metrics you care about. Both are in-process — no
+            evaluator URL to configure, nothing to run — so a research script can log a compile run with
+            zero network calls.
           </p>
         </Section>
 
@@ -172,8 +181,11 @@ async def answer_question(query: str, context_chunks: list[str]) -> str:
             No database to provision to get started: RAGeval writes to a local SQLite file (
             <code className="text-green-300">~/.rageval/rageval.db</code> by default, or wherever{' '}
             <code className="text-green-300">RAGEVAL_DB_PATH</code> points). Set{' '}
-            <code className="text-green-300">POSTGRES_URL</code> and it switches to Postgres with the
-            same schema — no code changes needed on your side.
+            <code className="text-green-300">RAGEVAL_POSTGRES_URL</code> (RAGeval's own dedicated var —
+            not the generic <code className="text-green-300">POSTGRES_URL</code>, which would collide
+            with a host app's own database if you're using <code className="text-green-300">@track</code>
+            {' '}from inside another project) and it switches to Postgres with the same schema, plus
+            pgvector storage for each interaction's query embedding — no code changes needed on your side.
           </p>
           <p>
             The hosted dashboard scopes reads to the current browser session via an{' '}
@@ -206,7 +218,7 @@ async def answer_question(query: str, context_chunks: list[str]) -> str:
 
         {/* PyPI / self-hosting */}
         <Section icon={Package} iconColor="text-indigo-400" title="Installation & Self-Hosting">
-          <Code>{`pip install omnismart-rageval   # version 0.1.11 — import name stays \`rageval\`
+          <Code>{`pip install omnismart-rageval   # version 0.1.18 — import name stays \`rageval\`
 
 rageval init                    # creates ~/.rageval/rageval.db
 rageval serve --port 8003       # requires the [server] extra (uvicorn)`}</Code>
