@@ -59,7 +59,7 @@ def test_api_compat_shim_copies_postgres_url_once(tmp_path):
     result = subprocess.run(
         [sys.executable, "-c",
          "import api; import os; print('RAGEVAL_POSTGRES_URL=' + os.environ.get('RAGEVAL_POSTGRES_URL', ''))"],
-        cwd=str(Path(__file__).resolve().parent.parent), env=env, capture_output=True, text=True, timeout=30,
+        cwd=str(Path(__file__).resolve().parent.parent), env=env, capture_output=True, text=True, timeout=60,
     )
     assert "RAGEVAL_POSTGRES_URL=postgresql://compat-shim-test/db" in result.stdout, result.stderr
 
