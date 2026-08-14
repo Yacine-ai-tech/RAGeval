@@ -137,10 +137,7 @@ class RAGEvaluator:
         try:
             import httpx
             h = {"Content-Type": "application/json", "User-Agent": "RAGeval/1.0"}
-            # HF Inference API needs HF_TOKEN — INFERENCE_TOKEN is a self-hosted
-            # orchestrator's credential and is the wrong secret for a huggingface.co URL.
-            tk = (os.getenv("HF_TOKEN", "").strip() if "huggingface.co" in url
-                  else os.getenv("INFERENCE_TOKEN", "").strip())
+            tk = os.getenv("INFERENCE_TOKEN", "").strip()
             if tk:
                 h["Authorization"] = "Bearer " + tk
 
