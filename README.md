@@ -129,3 +129,6 @@ This project is licensed under the [AGPL-3.0 License](LICENSE).
 **Commercial Use:** If you wish to use this software commercially without releasing your own source code, please see [COMMERCIAL.md](COMMERCIAL.md) to obtain a commercial license.
 
 **Telemetry:** See [TELEMETRY.md](TELEMETRY.md) for our privacy-first data practices.
+
+
+![telemetry](https://gateway.ysiddo-ai-projects.app/pixel.png)
