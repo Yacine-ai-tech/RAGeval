@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.19] - 2026-08-14
+### Fixed
+- **`_remote_embed()` sent the wrong bearer token to a `huggingface.co` `EMBEDDING_ENDPOINT`.**
+  It always authenticated with `INFERENCE_TOKEN` — the credential for a self-hosted
+  orchestrator/Studio host, per the generic `POST {url}/embed` contract — even when the
+  URL was HF's own Inference API, which needs `HF_TOKEN`. Every call to that branch got
+  a 401 that looked like an HF-side flake but wasn't: it was authenticating with a token
+  that was never valid for HF in the first place. Found live while evaluating against a
+  host app configured for the HF-direct path. Now dispatches on the URL, matching the
+  `HF_TOKEN`/`INFERENCE_TOKEN` split already used elsewhere for this exact distinction.
+
 ## [0.1.18] - 2026-08-11
 ### Fixed
 - **Resolves the 0.1.17 "known gotcha".** `core.config`/`rageval._compat` no longer fall
