@@ -1,4 +1,3 @@
-import base64
 """
 RAGeval API — drop-in LLMOps observability.
 
@@ -14,6 +13,7 @@ Endpoints:
   POST /eval/embedding-comparison
 """
 from __future__ import annotations
+import base64
 
 import os as _os_early
 
