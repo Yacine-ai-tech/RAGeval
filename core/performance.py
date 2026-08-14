@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Disable heavy library initializations at import time
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "0")  # Allow online but don't preload
-os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")  # Disable telemetry
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # Avoid warnings
 
 # PyTorch optimizations
