@@ -213,20 +213,31 @@ class RAGEvaluator:
             f"Answer: {answer[:2000]}\n\nContext: {context[:4000]}"
         )
 
+        # Neither the litellm nor the google-genai call below bounds itself by default —
+        # observed live: a hung judge call with no timeout stalled a 30-case eval run for
+        # ~9h wall-clock (0.1% CPU, no further log output) before it was noticed and
+        # killed manually. asyncio.wait_for() gives every judge call the same hard ceiling
+        # a slow/unresponsive provider can't exceed; a timeout is treated exactly like any
+        # other judge failure below (skip, don't fail the whole eval).
+        import asyncio
+        judge_timeout = float(os.getenv("JUDGE_TIMEOUT", "30"))
+
         if model.startswith("gemini/"):
             try:
                 from google import genai
                 from google.genai import types
-                import asyncio
-                
+
                 client = genai.Client(http_options={"api_version": "v1beta"})
                 actual_model = model.split("gemini/", 1)[-1]
-                
-                resp = await asyncio.to_thread(
-                    client.models.generate_content,
-                    model=actual_model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(temperature=0.0)
+
+                resp = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        client.models.generate_content,
+                        model=actual_model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(temperature=0.0)
+                    ),
+                    timeout=judge_timeout,
                 )
                 content = (resp.text or "").strip()
             except ImportError:
@@ -241,10 +252,13 @@ class RAGEvaluator:
             try:
                 # No fallbacks= here on purpose: each configured judge is used as-is or
                 # skipped, never silently swapped for a different model.
-                resp = await acompletion(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.0,
+                resp = await asyncio.wait_for(
+                    acompletion(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.0,
+                    ),
+                    timeout=judge_timeout,
                 )
                 content = (resp.choices[0].message.content or "").strip()
             except Exception as e:
