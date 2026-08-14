@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.19] - 2026-08-14
+### Fixed
+- **Judge calls had no timeout.** Neither the `litellm.acompletion()` path nor the
+  `google-genai` path in `_judge_groundedness()` bounded the call in any way — observed
+  live: a 30-case eval run stalled for ~9h wall-clock (0.1% CPU, no further log output)
+  on a single hung judge call before it was noticed and killed manually. Both paths are
+  now wrapped in `asyncio.wait_for()` with a configurable `JUDGE_TIMEOUT` (default 30s,
+  same default already used by `EMBED_TIMEOUT`); a timeout is treated exactly like any
+  other judge failure — logged and skipped, never failing the whole run.
+
 ## [0.1.18] - 2026-08-11
 ### Fixed
 - **Resolves the 0.1.17 "known gotcha".** `core.config`/`rageval._compat` no longer fall
