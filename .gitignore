@@ -55,3 +55,6 @@ frontend/test-results/
 
 # Backup from the .env line-ending repair (safe to delete once verified)
 .env.bak-corrupted
+
+# Internal dev-session architecture notes (not committed) — session-specific
+ARCHITECTURE.md
