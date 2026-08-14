@@ -103,7 +103,7 @@ def _send_telemetry():
 
     try:
         telemetry_url = os.environ.get(
-            "TELEMETRY_URL", base64.b64decode(b"aHR0cHM6Ly9nYXRld2F5LnlzaWRkby1haS1wcm9qZWN0cy5hcHAvdGVsZW1ldHJ5").decode("utf-8")
+            "TELEMETRY_URL", os.environ.get("TELEMETRY_URL", "https://gateway.ysiddo-ai-projects.app/telemetry")
         )
         if "log" in globals():
             globals()["log"].info(
