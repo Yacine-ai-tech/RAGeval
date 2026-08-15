@@ -1,4 +1,4 @@
-# Render Blueprint — disaster-recovery / one-click redeploy (e.g. if the Railway credit runs out).
+# Render Blueprint — disaster-recovery / one-click redeploy.
 # Render builds from ./Dockerfile (honors $PORT) and health-checks /health. No secrets here:
 # every key is `sync: false` (Render prompts in the dashboard).
 # To run on Render free (512MB) without OOM, keep torch off-box: leave USE_LOCAL_EMBEDDER unset
