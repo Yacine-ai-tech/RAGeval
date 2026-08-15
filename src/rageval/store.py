@@ -87,21 +87,23 @@ def _db_path() -> str:
         os.makedirs(parent, exist_ok=True)
     return path
 
-def _execute(sql: str, params: tuple = (), fetchall: bool = False, is_script: bool = False):
+def _execute(sql: str, params: tuple = (), fetchall: bool = False, is_script: bool = False, _retries: int = 3):
     is_pg = bool(settings.POSTGRES_URL)
-    if is_pg:
-        import psycopg2
-        import psycopg2.extras
-        conn = psycopg2.connect(settings.POSTGRES_URL)
-        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        if not is_script:
-            sql = sql.replace('?', '%s')
-    else:
-        conn = sqlite3.connect(_db_path())
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        
+    conn = None
+    cur = None
     try:
+        if is_pg:
+            import psycopg2
+            import psycopg2.extras
+            conn = psycopg2.connect(settings.POSTGRES_URL)
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            if not is_script:
+                sql = sql.replace('?', '%s')
+        else:
+            conn = sqlite3.connect(_db_path())
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            
         if is_script:
             if is_pg:
                 cur.execute(sql)
@@ -116,9 +118,17 @@ def _execute(sql: str, params: tuple = (), fetchall: bool = False, is_script: bo
             res = None
         conn.commit()
         return res
+    except Exception as e:
+        if _retries > 0 and is_pg:
+            import psycopg2
+            if isinstance(e, psycopg2.OperationalError):
+                import time
+                time.sleep(0.5)
+                return _execute(sql, params, fetchall, is_script, _retries - 1)
+        raise e
     finally:
-        cur.close()
-        conn.close()
+        if cur: cur.close()
+        if conn: conn.close()
 
 def init_rageval_table() -> None:
     """Initialize the rageval_log table (idempotent)."""
