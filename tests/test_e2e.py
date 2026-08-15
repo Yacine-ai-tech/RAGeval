@@ -17,8 +17,8 @@ async def test_e2e_rageval_score():
     
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.post("/eval/score", json=payload, headers=HEADERS)
-        # Should return 200 or 500 if LLM judge fails
-        assert response.status_code in (200, 500)
+        # Should return 200 or 500 or 503 if LLM judge fails
+        assert response.status_code in (200, 500, 503)
 
 @pytest.mark.asyncio
 async def test_e2e_rageval_metrics():
