@@ -17,6 +17,7 @@ data = [
     {"key": "GROQ_API_KEY", "value": os.environ.get("GROQ_API_KEY", "")},
     {"key": "ANTHROPIC_API_KEY", "value": os.environ.get("ANTHROPIC_API_KEY", "")},
     {"key": "GEMINI_API_KEY", "value": os.environ.get("GEMINI_API_KEY", "")},
+    {"key": "OPENAI_API_KEY", "value": os.environ.get("OPENAI_API_KEY", "")},
     {"key": "JUDGE_MODELS", "value": "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,gemini/gemini-flash-latest,openai/gpt-4o-mini"},
     {"key": "INFERENCE_MODE", "value": "remote"},
     {"key": "EMBEDDING_ENDPOINT", "value": "https://orchestrator-wf53.onrender.com/api/inference"},
