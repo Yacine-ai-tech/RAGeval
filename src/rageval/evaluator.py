@@ -286,11 +286,15 @@ class RAGEvaluator:
                 "(anthropic/..., groq/..., gemini/..., openai/...)."
             )
 
-        scores: List[Dict[str, Any]] = []
-        for model in settings.JUDGE_MODELS:
+        async def _run_judge(model):
             s = await self._judge_groundedness(answer, context, model=model)
-            if s is not None:                       # skip unavailable/unconfigured judges
-                scores.append({"model": model, "score": s})
+            if s is not None:
+                return {"model": model, "score": s}
+            return None
+
+        import asyncio
+        results = await asyncio.gather(*[_run_judge(model) for model in settings.JUDGE_MODELS])
+        scores = [r for r in results if r is not None]
 
         if len(scores) < MIN_JUDGES_REQUIRED:
             attempted = ", ".join(settings.JUDGE_MODELS)
@@ -375,9 +379,14 @@ class RAGEvaluator:
         persona: Optional[str] = None,
     ) -> Dict[str, Any]:
         """End-to-end interaction scoring."""
-        relevance = self.score_retrieval_relevance(query, chunks)
-        consensus = await self.score_groundedness_consensus(answer, "\n".join(chunks))
-        faithfulness = self.score_faithfulness(answer, chunks)
+        import asyncio
+        relevance_task = asyncio.to_thread(self.score_retrieval_relevance, query, chunks)
+        consensus_task = self.score_groundedness_consensus(answer, "\n".join(chunks))
+        faithfulness_task = asyncio.to_thread(self.score_faithfulness, answer, chunks)
+
+        relevance, consensus, faithfulness = await asyncio.gather(
+            relevance_task, consensus_task, faithfulness_task
+        )
         cost = self.calculate_cost(tokens_used, model)
         groundedness = consensus["consensus"]
         overall_quality = 0.4 * relevance + 0.4 * groundedness + 0.2 * faithfulness
@@ -405,7 +414,8 @@ class RAGEvaluator:
         # just skips the column.
         query_embedding: Optional[List[float]] = None
         if settings.POSTGRES_URL:
-            vecs = self._embed([query])
+            import asyncio
+            vecs = await asyncio.to_thread(self._embed, [query])
             if vecs is not None and len(vecs) == 1:
                 query_embedding = [float(x) for x in vecs[0]]
 
