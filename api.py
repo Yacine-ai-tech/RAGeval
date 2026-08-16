@@ -355,8 +355,16 @@ async def eval_alerts(request: Request) -> Dict[str, Any]:
 async def retrieval_bench(req: RetrievalBenchRequest) -> Dict[str, Any]:
     if not (len(req.queries) == len(req.chunks_a) == len(req.chunks_b)):
         raise HTTPException(status_code=400, detail="length_mismatch")
-    a_scores = [evaluator.score_retrieval_relevance(q, cs) for q, cs in zip(req.queries, req.chunks_a)]
-    b_scores = [evaluator.score_retrieval_relevance(q, cs) for q, cs in zip(req.queries, req.chunks_b)]
+    
+    import asyncio
+    async def _eval_a(q, cs):
+        return await asyncio.to_thread(evaluator.score_retrieval_relevance, q, cs)
+    async def _eval_b(q, cs):
+        return await asyncio.to_thread(evaluator.score_retrieval_relevance, q, cs)
+        
+    a_scores = await asyncio.gather(*[_eval_a(q, cs) for q, cs in zip(req.queries, req.chunks_a)])
+    b_scores = await asyncio.gather(*[_eval_b(q, cs) for q, cs in zip(req.queries, req.chunks_b)])
+    
     return {
         "strategy_a_mean": sum(a_scores) / max(len(a_scores), 1),
         "strategy_b_mean": sum(b_scores) / max(len(b_scores), 1),
@@ -368,11 +376,18 @@ async def retrieval_bench(req: RetrievalBenchRequest) -> Dict[str, Any]:
 
 @app.post("/eval/embedding-comparison")
 async def embedding_comparison(req: EmbeddingComparisonRequest) -> Dict[str, Any]:
+    import asyncio
     results: Dict[str, float] = {}
-    for model in req.embedding_models:
+    
+    async def _eval_model(model):
         ev = RAGEvaluator(embedding_model=model)
-        scores = [ev.score_retrieval_relevance(q, cs) for q, cs in zip(req.queries, req.chunks)]
-        results[model] = sum(scores) / max(len(scores), 1)
+        scores = await asyncio.gather(*[asyncio.to_thread(ev.score_retrieval_relevance, q, cs) for q, cs in zip(req.queries, req.chunks)])
+        return model, sum(scores) / max(len(scores), 1)
+        
+    res = await asyncio.gather(*[_eval_model(m) for m in req.embedding_models])
+    for model, score in res:
+        results[model] = score
+        
     return {"results": results, "best": max(results, key=results.get) if results else None}
 
 

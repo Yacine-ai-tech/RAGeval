@@ -55,6 +55,7 @@ def test_api_compat_shim_copies_postgres_url_once(tmp_path):
         "POSTGRES_URL": "postgresql://compat-shim-test/db",
         "RAGEVAL_DB_PATH": str(tmp_path / "shim_test.db"),
         "TELEMETRY_OPT_OUT": "true",
+        "LITELLM_LOCAL_MODEL_COST_MAP": "True",
     }
     result = subprocess.run(
         [sys.executable, "-c",
