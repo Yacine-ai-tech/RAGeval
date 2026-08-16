@@ -4,6 +4,9 @@ The published package (``pip install omnismart-rageval``) must work on any machi
 import the RAGeval *application's* ``core`` module (which isn't shipped in the wheel). This mirrors
 exactly the settings the package needs, reading the **same environment variables**, so behaviour is
 identical whether ``rageval`` is imported standalone or from within the app repo.
+
+IMPORTANT: When changing a default value here, mirror it in core/config.py and vice versa.
+The two modules must stay in sync — there is no runtime enforcement.
 """
 from __future__ import annotations
 
@@ -16,8 +19,17 @@ RAGEVAL_HOME = Path(os.getenv("RAGEVAL_HOME", str(Path.home() / ".rageval")))
 try:
     RAGEVAL_HOME.mkdir(parents=True, exist_ok=True)
 except Exception:  # pragma: no cover - read-only home, etc.
-    import logging; logging.error('Unhandled exception', exc_info=True)
     pass
+
+
+# Canonical default judge list — must match core/config.py exactly.
+# gemini/gemini-flash-latest is the current production alias.
+_DEFAULT_JUDGE_MODELS = (
+    "anthropic/claude-haiku-4-5,"
+    "groq/llama-3.3-70b-versatile,"
+    "gemini/gemini-flash-latest,"
+    "openai/gpt-4o-mini"
+)
 
 
 class _Settings:
@@ -42,8 +54,7 @@ class _Settings:
     LLM_JUDGE = os.getenv("LLM_JUDGE", "anthropic/claude-haiku-4-5")
     JUDGE_MODELS = [
         m.strip() for m in os.getenv(
-            "JUDGE_MODELS",
-            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,gemini/gemini-flash-latest,openai/gpt-4o-mini",
+            "JUDGE_MODELS", _DEFAULT_JUDGE_MODELS,
         ).split(",") if m.strip()
     ]
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
@@ -51,6 +62,11 @@ class _Settings:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+    # NOTE: GEMINI_API_KEY below is a snapshot captured at import time.
+    # The Gemini judge reads os.environ["GEMINI_API_KEY"] directly at call time
+    # (via google.genai.Client), so it always sees the current value.
+    # This snapshot is kept for diagnostic inspection only — do NOT gate judge
+    # calls on this field; gate on os.getenv("GEMINI_API_KEY") instead.
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 
