@@ -1,9 +1,9 @@
 """Store round-trip test — SQLite, fully offline (temp DB via env).
 
-DEFECT-12 fix: test_log_then_metrics_roundtrip previously checked for keys
-'total_interactions', 'count', or 'total' — none of which exist in get_metrics().
-The actual key is 'total_queries'. The old assertion was always True (None is None)
-and never validated that the interaction was actually persisted.
+test_log_then_metrics_roundtrip previously checked for keys 'total_interactions',
+'count', or 'total' — none of which exist in get_metrics(). The actual key is
+'total_queries'. The old assertion was always True (None is None) and never
+validated that the interaction was actually persisted.
 """
 import asyncio
 import importlib
@@ -29,7 +29,7 @@ def test_log_then_metrics_roundtrip(sqlite_store):
     metrics = store.get_metrics(days=1)
     assert isinstance(metrics, dict)
 
-    # DEFECT-12 fix: assert on the actual key name 'total_queries'.
+    # Assert on the actual key name 'total_queries'.
     # Old code used 'total_interactions'/'count'/'total' — all missing — so
     # total was always None and `assert None is None` passed vacuously even
     # when log_interaction() silently failed.
@@ -57,7 +57,7 @@ def test_metrics_avg_relevance_correct(sqlite_store):
 
 
 def test_query_volume_by_hour_is_populated(sqlite_store):
-    """DEFECT-17 regression: query_volume_by_hour must not be hardcoded to []."""
+    """Regression: query_volume_by_hour must not be hardcoded to []."""
     store = sqlite_store
     scores = {
         "relevance": 0.7, "groundedness": 0.7, "faithfulness": 0.7,

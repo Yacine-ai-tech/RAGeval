@@ -39,13 +39,11 @@ class Settings:
     RAGEVAL_STORE = os.getenv("RAGEVAL_STORE", "sqlite")
     RAGEVAL_DB_PATH = os.getenv("RAGEVAL_DB_PATH", str(RAGEVAL_HOME / "rageval.db"))
     # RAGEVAL_POSTGRES_URL only — deliberately no fallback to a bare POSTGRES_URL here.
-    # Every project in this portfolio has its own Postgres; a fallback would make rageval
-    # silently adopt a host app's own, unrelated database whenever rageval is embedded as
-    # a library and that host (reasonably) also uses the generic POSTGRES_URL name for
-    # itself (confirmed live: this exact fallback wrote rageval's schema into another
-    # project's real production database before being removed). The standalone app
-    # (api.py) does its own one-time POSTGRES_URL->RAGEVAL_POSTGRES_URL compat shim at
-    # startup, scoped to just that process — see api.py.
+    # A fallback would make rageval silently adopt a host app's own, unrelated database
+    # whenever rageval is embedded as a library and that host (reasonably) also uses the
+    # generic POSTGRES_URL name for itself. The standalone app (api.py) does its own
+    # one-time POSTGRES_URL->RAGEVAL_POSTGRES_URL compat shim at startup, scoped to just
+    # that process — see api.py.
     POSTGRES_URL = os.getenv("RAGEVAL_POSTGRES_URL", "")
     RAGEVAL_OTEL_ENDPOINT = os.getenv("RAGEVAL_OTEL_ENDPOINT", "")
     # Vector column width for the Postgres/pgvector production tier. Must match the

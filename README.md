@@ -1,18 +1,14 @@
 # RAGeval
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-
-
-[![CI](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml/badge.svg)](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-
+[![CI](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml/badge.svg)](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/omnismart-rageval.svg)](https://pypi.org/project/omnismart-rageval/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
-**Drop-in LLMOps observability. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
+**Drop-in LLMOps observability for RAG pipelines. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
 
 Version: **v0.1.22** | `pip install omnismart-rageval`
-> 🔗 **Live dashboard:** https://rageval.ysiddo-ai-projects.app/  ·  browser dashboard (score a query + view metrics).  Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
-> On-demand backend (first request ~30–60 s to wake).
+
+> 🔗 **Live demo:** https://rageval.ysiddo-ai-projects.app/ — browser dashboard (score a query + view metrics). Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
 > Self-hosting: see [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## The 60-Second Pitch
@@ -29,31 +25,35 @@ That's it. Open the dashboard at `localhost:8003`.
 
 ## What It Measures
 
-| Metric            | Definition                                                          |
-|-------------------|---------------------------------------------------------------------|
-| Retrieval relevance | Cosine sim between query and retrieved chunks (BGE-large by default) |
-| Groundedness consensus | Multi-judge LLM scoring across your configured `JUDGE_MODELS` (min. 2 — no single-judge fallback), flags disagreement |
-| Faithfulness      | Per-sentence max-similarity to any chunk (NLI proxy)                |
-| Cost              | USD per interaction, tracked by model                               |
-| Latency           | End-to-end wall-clock                                               |
+| Metric                  | Definition                                                                 |
+|--------------------------|-----------------------------------------------------------------------------|
+| Retrieval relevance      | Cosine similarity between query and retrieved chunks (BGE-large by default) |
+| Groundedness consensus   | Multi-judge LLM scoring across your configured `JUDGE_MODELS` (min. 2 — no single-judge fallback), flags disagreement |
+| Faithfulness             | Per-sentence max-similarity to any chunk (NLI proxy)                        |
+| Cost                     | USD per interaction, tracked by model                                       |
+| Latency                  | End-to-end wall-clock                                                       |
+
+See [RESEARCH.md](RESEARCH.md) for the reasoning behind an LLM-judge, multi-judge-consensus design, and [eval/JUDGE_BENCHMARK.md](eval/JUDGE_BENCHMARK.md) for measured accuracy against a hallucination benchmark.
 
 ## Comparison vs Alternatives
 
-| Feature             | RAGeval  | Phoenix  | Langfuse | TruLens  |
-|---------------------|----------|----------|----------|----------|
-| Self-hosted         | ✅       | ✅        | ✅        | ✅        |
-| SQLite default      | ✅       | ❌        | ❌        | ❌        |
-| Drop-in decorator   | ✅       | partial   | ❌        | partial   |
-| Persona-aware       | ✅       | ❌        | ❌        | ❌        |
-| Multi-judge consensus | ✅     | ❌        | ❌        | ❌        |
-| Cost tracking       | ✅       | ✅        | ✅        | partial   |
-| Setup time          | 60 sec   | 10 min    | 15 min    | 10 min    |
+| Feature                | RAGeval  | Phoenix  | Langfuse | TruLens  |
+|-------------------------|----------|----------|----------|----------|
+| Self-hosted             | ✅       | ✅       | ✅       | ✅       |
+| SQLite default           | ✅       | ❌       | ❌       | ❌       |
+| Drop-in decorator        | ✅       | partial  | ❌       | partial  |
+| Persona-aware            | ✅       | ❌       | ❌       | ❌       |
+| Multi-judge consensus    | ✅       | ❌       | ❌       | ❌       |
+| Cost tracking            | ✅       | ✅       | ✅       | partial  |
+| Setup time               | 60 sec   | 10 min   | 15 min   | 10 min   |
+
+_As of 2026, based on each project's public documentation. Feature sets change fast in this space — worth re-checking before you decide._
 
 ## Quick Start
 
 ```bash
 pip install omnismart-rageval   # v0.1.22 — distribution name; CLI + import remain `rageval`
-rageval init                 # creates ~/.rageval/rageval.db
+rageval init                    # creates ~/.rageval/rageval.db
 rageval serve --port 8003
 ```
 
@@ -82,16 +82,21 @@ def chain_invoke(query: str, context_chunks: list[str]):
 ## Endpoints
 
 | Method | Path                          | Purpose                                  |
-|--------|-------------------------------|------------------------------------------|
-| GET    | /health                       | Liveness                                 |
-| POST   | /eval/log                     | Score + store                            |
-| POST   | /eval/score                   | Score only (no storage)                  |
-| GET    | /eval/metrics?days=7          | Aggregate dashboard data                 |
-| GET    | /eval/queries                 | Query log (filter by needs_review)       |
-| GET    | /eval/cost-report?days=30     | Cost breakdown by day + model            |
-| GET    | /eval/alerts                  | Recent flagged queries                   |
-| POST   | /eval/retrieval-bench         | A/B compare retrieval strategies         |
-| POST   | /eval/embedding-comparison    | Compare embedding models                 |
+|--------|-------------------------------|-------------------------------------------|
+| GET    | /health                       | Liveness                                  |
+| POST   | /eval/log                     | Score + store                             |
+| POST   | /eval/score                   | Score only (no storage)                   |
+| GET    | /eval/metrics?days=7          | Aggregate dashboard data                  |
+| GET    | /eval/queries                 | Query log (filter by needs_review)        |
+| GET    | /eval/cost-report?days=30     | Cost breakdown by day + model             |
+| GET    | /eval/alerts                  | Recent flagged queries                    |
+| GET    | /eval/events                  | Recent evaluation-pipeline telemetry      |
+| GET    | /eval/config                  | Judge/embedding/threshold configuration   |
+| POST   | /eval/retrieval-bench         | A/B compare retrieval strategies          |
+| POST   | /eval/embedding-comparison    | Compare embedding models                  |
+| WS     | /eval/live                    | Real-time event feed                      |
+
+Full reference with request/response shapes: the in-app **API Docs** page (`/api-docs` in the dashboard), or [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## Tests
 
@@ -101,34 +106,12 @@ def chain_invoke(query: str, context_chunks: list[str]):
 pytest tests/ -q
 ```
 
-## License
+## License & Commercial Use
 
-AGPL-3.0
+This project is open-source under **AGPL-3.0** — free for researchers, students, and open-source use.
 
-## ⚖️ License & Enterprise Use (Dual-License)
+The AGPLv3 requires that any proprietary network service (SaaS, internal corporate tooling) that uses or modifies this code also open-source its entire backend. If you need to use RAGeval in a closed-source commercial environment, or need enterprise features (SSO, custom RBAC, etc.), see [COMMERCIAL.md](COMMERCIAL.md) for a commercial license.
 
-This project is open-source under the **AGPL-3.0 License**. It is completely free for researchers, students, and open-source hobbyists.
+## Anonymous Telemetry
 
-> **Commercial Use:** The AGPLv3 license requires that any proprietary network service (SaaS, internal corporate tools) that uses or modifies this code must also open-source its entire backend. 
-> 
-> If you wish to use this framework in a closed-source commercial environment, or require **Enterprise features** (SSO, Active Directory, Custom VPC Deployment, Strict RBAC), you must obtain a **Commercial License**. 
-> Please reach out to discuss commercial licensing and integration consulting.
-
-## 📡 Anonymous Telemetry
-This project collects anonymous, GDPR-compliant startup pings to help the author understand usage volume and prioritize development. 
-* **What is collected:** A startup event timestamp and anonymized deployment origin. No API keys, no user prompts, and no sensitive application data is ever collected.
-* **How to disable:** We respect your privacy and development environment. To opt-out, simply set `TELEMETRY_OPT_OUT=true` in your `.env` file.
-
-
-<!-- Project Analytics -->
-<img src="https://gateway.ysiddo-ai-projects.app/pixel/RAGeval" width="1" height="1" style="display:none;" alt="">
-
-## Licensing
-This project is licensed under the [AGPL-3.0 License](LICENSE).
-
-**Commercial Use:** If you wish to use this software commercially without releasing your own source code, please see [COMMERCIAL.md](COMMERCIAL.md) to obtain a commercial license.
-
-**Telemetry:** See [TELEMETRY.md](TELEMETRY.md) for our privacy-first data practices.
-
-
-![telemetry](https://gateway.ysiddo-ai-projects.app/pixel.png)
+RAGeval sends a single anonymous startup ping (a timestamp + a random, non-hardware-derived install ID — no API keys, prompts, or application data) so the maintainer can gauge usage. Disable it by setting `TELEMETRY_OPT_OUT=true` in your `.env`. See [TELEMETRY.md](TELEMETRY.md) for details.

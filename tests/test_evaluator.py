@@ -1,11 +1,11 @@
 """RAGEvaluator unit tests — pure cost math + scorer edge cases (no LLM / no models).
 
-Includes regression tests for defects found during the repository intelligence audit:
-  DEFECT-06: gpt-4o-mini must appear in OPENAI_PRICES (cost was always $0.00)
-  DEFECT-09: asyncio.gather with return_exceptions=True — no task cancellation on judge error
-  DEFECT-18: _persona_scope_flags must not false-split on bare newlines
-  DEFECT-19: score_faithfulness sentence splitter must preserve decimal numbers
-  DEFECT-02: @track sync decorator must not crash with asyncio.run() in async contexts
+Includes regression tests for:
+  - gpt-4o-mini must appear in OPENAI_PRICES (cost was always $0.00)
+  - asyncio.gather with return_exceptions=True — no task cancellation on judge error
+  - _persona_scope_flags must not false-split on bare newlines
+  - score_faithfulness sentence splitter must preserve decimal numbers
+  - @track sync decorator must not crash with asyncio.run() in async contexts
 """
 import asyncio
 import sys
@@ -201,10 +201,10 @@ def test_judge_call_has_no_fallback_model_param(monkeypatch):
     assert "fallbacks" not in captured
 
 
-# ─── DEFECT-06 regression ─────────────────────────────────────────────────────
+# ─── OpenAI judge cost tracking ────────────────────────────────────────────────
 
 def test_gpt4o_mini_has_nonzero_price():
-    """DEFECT-06: openai/gpt-4o-mini was missing from OPENAI_PRICES so all cost tracking
+    """openai/gpt-4o-mini was once missing from OPENAI_PRICES so all cost tracking
     for the OpenAI judge returned $0.00. It must now return a positive cost."""
     from rageval.evaluator import OPENAI_PRICES
     assert "openai/gpt-4o-mini" in OPENAI_PRICES, (
@@ -214,11 +214,11 @@ def test_gpt4o_mini_has_nonzero_price():
     assert cost > 0.0, f"Expected non-zero cost for gpt-4o-mini, got {cost}"
 
 
-# ─── DEFECT-18 regression ─────────────────────────────────────────────────────
+# ─── Persona scope flags on multi-line answers ─────────────────────────────────
 
 def test_persona_scope_flags_no_false_positive_on_bullet_list():
-    """DEFECT-18: bare newlines (bullet lists) must not be treated as sentence boundaries,
-    which was inflating the sentence count and triggering false PERSONA_SCOPE_VIOLATION."""
+    """Bare newlines (bullet lists) must not be treated as sentence boundaries — that
+    would inflate the sentence count and trigger false PERSONA_SCOPE_VIOLATION flags."""
     from rageval.evaluator import RAGEvaluator
     ev = RAGEvaluator()
     # A CFO answer with bullet points that contain no out-of-scope domain figures.
@@ -234,7 +234,7 @@ def test_persona_scope_flags_no_false_positive_on_bullet_list():
 
 
 def test_persona_scope_flags_still_catches_real_violations():
-    """DEFECT-18 sanity: genuine out-of-scope content must still be flagged."""
+    """Sanity check: genuine out-of-scope content must still be flagged."""
     from rageval.evaluator import RAGEvaluator
     ev = RAGEvaluator()
     # A CFO answer that leaks headcount (a 'people' domain metric).
@@ -243,12 +243,12 @@ def test_persona_scope_flags_still_catches_real_violations():
     assert "people" in flags, f"Expected 'people' violation, got {flags}"
 
 
-# ─── DEFECT-19 regression ─────────────────────────────────────────────────────
+# ─── Faithfulness sentence splitting on decimals ───────────────────────────────
 
 def test_faithfulness_sentence_split_preserves_decimals():
-    """DEFECT-19: the sentence splitter was splitting '$4.2M' into '$4' and '2M',
-    and '3.14%' into '3' and '14%'. The split must now only occur at sentence-ending
-    punctuation that is NOT surrounded by digits."""
+    """The sentence splitter used to split '$4.2M' into '$4' and '2M', and '3.14%'
+    into '3' and '14%'. The split must only occur at sentence-ending punctuation
+    that is NOT surrounded by digits."""
     import re
     # Replicate the fixed split logic from evaluator.py.
     answer = "Revenue was $4.2M. Margin improved by 3.14%. Headcount: 350."
@@ -263,10 +263,10 @@ def test_faithfulness_sentence_split_preserves_decimals():
     assert "3.14%" in full_text, f"3.14% was destroyed by sentence splitter. Sentences: {sentences}"
 
 
-# ─── DEFECT-02 regression ─────────────────────────────────────────────────────
+# ─── @track sync wrapper in an async context ───────────────────────────────────
 
 def test_track_sync_wrapper_does_not_crash_in_async_context():
-    """DEFECT-02: the old sync @track wrapper called asyncio.run() which raises
+    """The old sync @track wrapper called asyncio.run() which raises
     RuntimeError('This event loop is already running') when called from within a
     running event loop (FastAPI, Starlette, Jupyter, etc.).
 
@@ -286,10 +286,10 @@ def test_track_sync_wrapper_does_not_crash_in_async_context():
     asyncio.run(_caller())
 
 
-# ─── DEFECT-09 regression ─────────────────────────────────────────────────────
+# ─── Consensus failure doesn't crash the other scoring tasks ──────────────────
 
 def test_score_interaction_consensus_failure_does_not_crash_other_tasks(monkeypatch):
-    """DEFECT-09: asyncio.gather() with return_exceptions=True — when consensus raises
+    """asyncio.gather() with return_exceptions=True — when consensus raises
     InsufficientJudgesError, score_interaction must re-raise it cleanly, not silently
     discard the relevance/faithfulness results or cancel their threads.
 

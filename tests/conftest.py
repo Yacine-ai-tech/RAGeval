@@ -9,9 +9,9 @@ connection string, so "offline" tests silently write to production instead of a
 temp file.
 
 Blanks only RAGEVAL_POSTGRES_URL, RAGeval's own dedicated var — never the generic
-POSTGRES_URL, which belongs to whatever other project's database might also be
-configured in this environment (every project in this portfolio has its own). See
-core/config.py / rageval/_compat.py for why RAGEVAL_POSTGRES_URL takes priority.
+POSTGRES_URL, which may belong to an unrelated database also configured in this
+environment. See core/config.py / rageval/_compat.py for why RAGEVAL_POSTGRES_URL
+takes priority.
 """
 from __future__ import annotations
 

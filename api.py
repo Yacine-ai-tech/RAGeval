@@ -21,13 +21,13 @@ import base64
 import os as _os_early
 
 # One-time compat shim, scoped to this standalone-app process only: older/existing
-# deployments (e.g. this project's own Render service, configured via Render's
-# dashboard rather than this repo's .env) may still set POSTGRES_URL directly rather
-# than the newer RAGEVAL_POSTGRES_URL. core/config.py and rageval/_compat.py
-# deliberately no longer fall back to POSTGRES_URL themselves — that fallback is what
-# made `rageval`, when imported as a *library* elsewhere, silently adopt a host app's
-# own unrelated database. Doing the compat copy here instead, before either settings
-# module is imported, keeps that safety while not breaking this app's own deployment.
+# deployments may still set POSTGRES_URL directly (e.g. via a hosting platform's own
+# dashboard env-var UI) rather than the newer RAGEVAL_POSTGRES_URL. core/config.py and
+# rageval/_compat.py deliberately no longer fall back to POSTGRES_URL themselves — that
+# fallback is what made `rageval`, when imported as a *library* elsewhere, silently
+# adopt a host app's own unrelated database. Doing the compat copy here instead, before
+# either settings module is imported, keeps that safety while not breaking existing
+# deployments of this standalone app.
 if not _os_early.environ.get("RAGEVAL_POSTGRES_URL") and _os_early.environ.get("POSTGRES_URL"):
     _os_early.environ["RAGEVAL_POSTGRES_URL"] = _os_early.environ["POSTGRES_URL"]
 
@@ -61,9 +61,9 @@ from rageval.store import (
     log_interaction,
 )
 
-# DEFECT-11: rate limiting — prevent LLM judge quota exhaustion from unauthenticated clients.
-# Each /eval/score or /eval/log call triggers 3 LLM judge calls; without limiting, a single
-# actor can exhaust daily Groq/Anthropic/Gemini quotas in under a minute.
+# Rate limiting: prevents LLM judge quota exhaustion from unauthenticated clients.
+# Each /eval/score or /eval/log call triggers multiple LLM judge calls; without limiting,
+# a single actor could exhaust the configured judge providers' quotas in under a minute.
 try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
     from slowapi.util import get_remote_address
@@ -76,7 +76,7 @@ except ImportError:
 
 log = get_logger(__name__)
 
-# DEFECT-23 fix: read the real package version instead of hardcoding "0.1.0".
+# Read the real installed package version rather than hardcoding one.
 try:
     from importlib.metadata import version as _pkg_version
     _VERSION = _pkg_version("omnismart-rageval")
@@ -94,7 +94,7 @@ except Exception:
 
 app = FastAPI(title="RAGeval", version=_VERSION, description="Drop-in LLMOps observability.")
 
-# DEFECT-11: attach the rate limiter to the app.
+# Attach the rate limiter to the app.
 if _RATE_LIMIT_ENABLED:
     app.state.limiter = _limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -127,6 +127,8 @@ def _telemetry_instance_id() -> str:
 
 
 def _send_telemetry():
+    if os.environ.get("TELEMETRY_OPT_OUT", "false").lower() == "true":
+        return
     lock_file = os.path.join(settings.LOGS_DIR, ".telemetry_last_ping")
     try:
         if os.path.exists(lock_file):
@@ -137,11 +139,10 @@ def _send_telemetry():
     except Exception:
         pass
 
+    telemetry_url = os.environ.get("TELEMETRY_URL", "")
+    if not telemetry_url:
+        return
     try:
-        # DEFECT-20 fix: removed redundant nested os.environ.get() call.
-        telemetry_url = os.environ.get(
-            "TELEMETRY_URL", "https://gateway.ysiddo-ai-projects.app/telemetry"
-        )
         log.info(
             "Anonymous telemetry ping to %s (set TELEMETRY_OPT_OUT=true to disable).",
             telemetry_url,
@@ -163,19 +164,16 @@ threading.Thread(target=_send_telemetry, daemon=True).start()
 async def verify_internal_token(request: Request, call_next):
     """Token gate for service-to-service calls.
 
-    DEFECT-04 fix: the /eval/* API prefix is now explicitly allowed through for
-    browser clients (GET endpoints). Only external-write endpoints that could drain
-    LLM quota (POST /eval/log, POST /eval/score, POST /eval/retrieval-bench,
-    POST /eval/embedding-comparison) require the internal token when
+    The /eval/* API prefix is explicitly allowed through for browser clients
+    (GET endpoints). Only write endpoints that could drain LLM quota (POST
+    /eval/log, POST /eval/score, POST /eval/retrieval-bench, POST
+    /eval/embedding-comparison) require the internal token when
     REQUIRE_INTERNAL_TOKEN=true is set.
 
     This two-tier policy lets:
     - The dashboard (browser, no token) read all GET /eval/* data freely.
-    - OmniIntel mesh services (with the token) write evaluations.
+    - Trusted service-to-service callers (with the token) write evaluations.
     - External @track integrations (pip users) POST with the token.
-
-    DEFECT-12 fix: removed the /api/v1/auth/ exemption — RAGeval has no such
-    routes and the exemption was dead code copied from IntelAI.
     """
     path = request.url.path
     method = request.method
@@ -191,7 +189,7 @@ async def verify_internal_token(request: Request, call_next):
     if _public:
         return await call_next(request)
 
-    # DEFECT-04 fix: all GET /eval/* routes are readable without the token
+    # All GET /eval/* routes are readable without the token
     # (they are displayed in the public-facing browser dashboard).
     # Only POST (write/score) routes require the internal token.
     _eval_get = path.startswith("/eval/") and method == "GET"
@@ -239,13 +237,12 @@ evaluator = RAGEvaluator()
 
 _EVENTS: "_deque[Dict[str, Any]]" = _deque(maxlen=200)
 
-# DEFECT-03 fix: _WS_CLIENTS is accessed from async handlers only (the route
-# coroutines all run on the same uvicorn event loop thread), so asyncio.Lock()
-# is the correct synchronisation primitive here — no threading.Lock() needed.
-# Using a plain set() was safe for asyncio-only access but the _emit() helper was
-# called from sync code paths that could theoretically race. Now _emit() schedules
-# the broadcast as a coroutine on the running loop rather than calling ws.send_json
-# directly, and all mutations of _WS_CLIENTS happen inside async handlers only.
+# _WS_CLIENTS is accessed from async handlers only (the route coroutines all run
+# on the same uvicorn event loop thread), so asyncio.Lock() is the correct
+# synchronisation primitive here — no threading.Lock() needed. _emit() schedules
+# the broadcast as a coroutine on the running loop rather than calling
+# ws.send_json directly, so all mutations of _WS_CLIENTS happen inside async
+# handlers only, even when _emit() itself is called from a sync code path.
 _WS_CLIENTS: set = set()
 _ws_lock = asyncio.Lock()
 
@@ -353,21 +350,20 @@ class EmbeddingComparisonRequest(BaseModel):
 
 @app.get("/health")
 async def health() -> Dict[str, Any]:
-    # DEFECT-23 fix: report the real package version, not a hardcoded "0.1.0".
     return {"status": "ok", "service": "rageval", "version": _VERSION}
 
 
 def _resolve_session_id(request: Request, body_session_id: Optional[str] = None) -> Optional[str]:
     """A visitor's own browser sends X-Demo-Session-Id (set by the frontend); that takes
     precedence since it can't be spoofed by a request body field. Service-to-service callers
-    (e.g. IntelAI's own chatbot dogfooding its RAG quality into this table) have no browser
-    session and pass session_id in the body instead — their rows stay platform-visible."""
+    have no browser session and pass session_id in the body instead — their rows stay
+    platform-visible rather than scoped to a single anonymous demo session."""
     return request.headers.get("X-Demo-Session-Id") or body_session_id
 
 
 @app.post("/eval/log")
 async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
-    # DEFECT-11: rate-limit write endpoints that trigger LLM judge calls.
+    # Rate-limit write endpoints that trigger LLM judge calls.
     if _RATE_LIMIT_ENABLED and _limiter:
         await _limiter._check_request_limit(request, eval_log, "60/minute")  # type: ignore[arg-type]
     _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona)
@@ -389,7 +385,7 @@ async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
 
 @app.post("/eval/score")
 async def eval_score(req: ScoreRequest, request: Request) -> Dict[str, Any]:
-    # DEFECT-11: rate-limit score endpoint — each call triggers 3 LLM judge calls.
+    # Rate-limit score endpoint — each call triggers multiple LLM judge calls.
     if _RATE_LIMIT_ENABLED and _limiter:
         await _limiter._check_request_limit(request, eval_score, "60/minute")  # type: ignore[arg-type]
     _emit("interaction.received", route="/eval/score", query=req.query[:120], persona=req.persona)
@@ -451,8 +447,7 @@ async def retrieval_bench(req: RetrievalBenchRequest) -> Dict[str, Any]:
     if not (len(req.queries) == len(req.chunks_a) == len(req.chunks_b)):
         raise HTTPException(status_code=400, detail="length_mismatch")
 
-    # DEFECT-22 fix: collapsed the two identical _eval_a / _eval_b coroutines into
-    # a single reusable helper — the A/B difference is purely in the input data
+    # A single reusable helper — the A/B difference is purely in the input data
     # (chunks_a vs chunks_b), not in the scoring strategy.
     async def _score_chunks(q, cs):
         return await asyncio.to_thread(evaluator.score_retrieval_relevance, q, cs)

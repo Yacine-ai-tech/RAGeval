@@ -11,14 +11,11 @@ test.describe('RAGeval All Pages E2E Suite', () => {
     await page.route('**/*', async route => {
       const req = route.request();
       const url = req.url();
-      if ((req.resourceType() === 'fetch' || req.resourceType() === 'xhr') && url.includes('vercel.app')) {
-        let backendUrl = process.env.TEST_BACKEND_URL || 'http://localhost:8003';
-        if (url.includes('docintel-ui')) backendUrl = process.env.TEST_DOCINTEL_URL || 'http://localhost:8001';
-        else if (url.includes('agentkit-ui')) backendUrl = process.env.TEST_AGENTKIT_URL || 'http://localhost:8002';
-        else if (url.includes('rageval-ui')) backendUrl = process.env.TEST_RAGEVAL_URL || 'http://localhost:8003';
-        else if (url.includes('voiceflow-ui')) backendUrl = process.env.TEST_VOICEFLOW_URL || 'http://localhost:8005';
-        else if (url.includes('streampulse-ui')) backendUrl = process.env.TEST_STREAMPULSE_URL || 'http://localhost:8004';
-        
+      // When the app is served from a static-hosted preview deployment, its fetch/XHR
+      // calls still point at that hosted origin; redirect them to a local backend
+      // for e2e testing instead.
+      if ((req.resourceType() === 'fetch' || req.resourceType() === 'xhr') && url.includes('.app/')) {
+        const backendUrl = process.env.TEST_BACKEND_URL || 'http://localhost:8003';
         const pathPart = new URL(url).pathname;
         const newUrl = backendUrl.replace(/\/$/, '') + pathPart;
         await route.continue({ url: newUrl });

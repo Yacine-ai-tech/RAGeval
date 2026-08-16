@@ -2,9 +2,8 @@ import React from 'react';
 import { PageHeader } from '../kit/AppShell';
 import { Card } from '../kit/primitives';
 
-// DEFECT-16 fix: benchmark results are now rendered as actual React components
-// (tables, headings, code blocks) instead of a raw <pre> dump of a Markdown string
-// showing literal **, ##, | characters.
+// Benchmark results are rendered as actual React components (tables, headings,
+// code blocks) instead of a raw <pre> dump of a Markdown string.
 
 interface TableRow {
   metric: string;

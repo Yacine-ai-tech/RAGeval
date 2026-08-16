@@ -70,7 +70,7 @@ export default function UserGuidePage() {
         <Section icon={Users} iconColor="text-purple-400" title="Multi-Judge Consensus & Disagreement Flagging">
           <p>
             Groundedness isn't scored by a single model. By default RAGeval asks a panel of judges —
-            Claude Haiku 4.5, Groq Llama 3.3 70B, Gemini 1.5 Flash, and GPT-4o-mini (configurable via
+            Claude Haiku 4.5, Groq Llama 3.3 70B, Gemini Flash, and GPT-4o-mini (configurable via
             the <code className="text-green-300">JUDGE_MODELS</code> env var, comma-separated) — the same
             question: "is this answer fully supported by the context?" Each judge returns a 0–1 score;
             judges whose provider key isn't configured are skipped, so the consensus only reflects
