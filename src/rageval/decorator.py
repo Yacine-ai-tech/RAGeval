@@ -1,7 +1,7 @@
 """
 RAGeval @track decorator — drop-in observability for any RAG function.
 
-DEFECT-02 fix: the sync wrapper previously called asyncio.run() which raises
+The sync wrapper previously called asyncio.run() which raises
 ``RuntimeError: This event loop is already running`` whenever the decorated sync
 function is invoked from within a running async event loop (FastAPI route, Jupyter
 notebook, Starlette, etc.) — the primary production use-case.

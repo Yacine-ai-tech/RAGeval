@@ -16,10 +16,9 @@ def test_generic_postgres_url_is_never_read_by_the_library_settings(monkeypatch)
     """core.config / rageval._compat must NOT fall back to a bare POSTGRES_URL — that
     fallback used to exist and it made rageval, imported as a library, silently adopt a
     host app's own unrelated database whenever that host (reasonably) also used the
-    generic POSTGRES_URL name for itself. Confirmed live: this exact fallback wrote
-    rageval's schema into another real project's production Postgres. The only place
-    POSTGRES_URL is still honored is api.py's own narrow startup shim (see
-    test_api.py) — never in these shared settings modules.
+    generic POSTGRES_URL name for itself. The only place POSTGRES_URL is still honored
+    is api.py's own narrow startup shim (see test_api.py) — never in these shared
+    settings modules.
 
     Uses an explicit empty string, not delenv: core/config.py calls load_dotenv() fresh
     on every reload, and load_dotenv()'s default override=False only skips keys that are

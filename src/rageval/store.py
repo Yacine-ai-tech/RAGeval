@@ -206,10 +206,10 @@ async def log_interaction(
     embedding (scores["query_embedding"], a list[float] — see evaluator.score_interaction)
     in the pgvector column when present; SQLite has no such column and this is skipped.
 
-    DEFECT-05 fix: the blocking psycopg2 I/O (Postgres tier) is offloaded to a
-    worker thread via asyncio.to_thread() so the uvicorn event loop stays free
-    during DB writes. All sync work is consolidated into one _write_interaction_sync()
-    call to avoid commit-visibility races from two separate thread dispatches.
+    The blocking psycopg2 I/O (Postgres tier) is offloaded to a worker thread via
+    asyncio.to_thread() so the uvicorn event loop stays free during DB writes. All
+    sync work is consolidated into one _write_interaction_sync() call to avoid
+    commit-visibility races from two separate thread dispatches.
     """
     await asyncio.to_thread(
         _write_interaction_sync,
@@ -242,8 +242,8 @@ def _scope_clause(session_id: Optional[str]) -> tuple[str, tuple]:
 def get_metrics(days: int = 7, session_id: Optional[str] = None) -> Dict[str, Any]:
     """Aggregate metrics over the last N days.
 
-    DEFECT-16 fix: query_volume_by_hour is now computed from stored timestamps
-    instead of being hardcoded to an empty list.
+    query_volume_by_hour is computed from stored timestamps rather than
+    hardcoded to an empty list.
     """
     from datetime import timedelta
     from collections import Counter as _Counter
@@ -264,7 +264,7 @@ def get_metrics(days: int = 7, session_id: Optional[str] = None) -> Dict[str, An
     n = len(rows)
     avg = lambda k: sum((r[k] or 0) for r in rows) / n
 
-    # DEFECT-16: compute query_volume_by_hour from stored timestamps.
+    # Compute query_volume_by_hour from stored timestamps.
     hour_counts: dict = _Counter()
     for r in rows:
         ts_raw = r.get("timestamp") or ""

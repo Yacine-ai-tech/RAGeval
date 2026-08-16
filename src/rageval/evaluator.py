@@ -58,7 +58,7 @@ ANTHROPIC_PRICES = {
     "anthropic/claude-opus-4-7": (15.00, 75.00),
 }
 OPENAI_PRICES = {
-    # DEFECT-06 fix: add the actually configured judge model gpt-4o-mini.
+    # gpt-4o-mini is the default configured judge model.
     # gpt-5/gpt-5-mini kept for forward-compat when the key is available.
     "openai/gpt-4o-mini": (0.15, 0.60),
     "openai/gpt-5": (5.00, 15.00),
@@ -66,10 +66,9 @@ OPENAI_PRICES = {
 }
 
 # ── Persona scope awareness ──────────────────────────────────────────────────
-# Which business domains each persona is allowed to speak to (mirrors the persona
-# RBAC used by IntelAI / the omnismart-personas package). Used to catch when, e.g.,
-# a CFO response surfaces People/HR figures it shouldn't. Personas not listed here
-# are treated as unrestricted (no scope flag).
+# Which business domains each persona is allowed to speak to. Used to catch when,
+# e.g., a CFO response surfaces People/HR figures it shouldn't. Personas not listed
+# here are treated as unrestricted (no scope flag).
 PERSONA_DOMAINS: Dict[str, set] = {
     "cfo": {"finance", "growth"},
     "chro": {"people", "esg"},
@@ -294,8 +293,8 @@ class RAGEvaluator:
     def score_faithfulness(self, answer: str, chunks: List[str]) -> float:
         """Embedding-similarity NLI proxy: max similarity to any chunk, averaged over sentences.
 
-        DEFECT-19 fix: sentence splitting now uses a regex that respects decimal numbers
-        (e.g. $4.2M, 3.14%) and does not split on dots that are surrounded by digits.
+        Sentence splitting uses a regex that respects decimal numbers (e.g. $4.2M,
+        3.14%) and does not split on dots that are surrounded by digits.
         """
         if not chunks or not answer.strip():
             return 0.0
@@ -335,9 +334,9 @@ class RAGEvaluator:
     def _persona_scope_flags(answer: str, persona: Optional[str]) -> List[str]:
         """Persona awareness: return out-of-scope business domains a persona's answer surfaced.
 
-        DEFECT-18 fix: only split on sentence-ending punctuation followed by whitespace.
-        Bare newlines (e.g. bullet lists) are no longer treated as sentence boundaries,
-        which previously caused false-positive PERSONA_SCOPE_VIOLATION flags.
+        Only splits on sentence-ending punctuation followed by whitespace — bare
+        newlines (e.g. bullet lists) are not treated as sentence boundaries, which
+        would otherwise cause false-positive PERSONA_SCOPE_VIOLATION flags.
         """
         if not persona or not answer:
             return []
@@ -370,16 +369,17 @@ class RAGEvaluator:
     ) -> Dict[str, Any]:
         """End-to-end interaction scoring.
 
-        DEFECT-09 fix: use return_exceptions=True so an InsufficientJudgesError from
-        consensus_task does not cancel the still-running relevance/faithfulness threads
-        (asyncio.to_thread tasks cannot actually be cancelled — they keep running but
-        their results were silently discarded, wasting embedding API quota).
+        Uses return_exceptions=True so an InsufficientJudgesError from consensus_task
+        does not cancel the still-running relevance/faithfulness threads
+        (asyncio.to_thread tasks cannot actually be cancelled — they would otherwise
+        keep running with their results silently discarded, wasting embedding API
+        quota).
         """
         relevance_task = asyncio.to_thread(self.score_retrieval_relevance, query, chunks)
         consensus_task = self.score_groundedness_consensus(answer, "\n".join(chunks))
         faithfulness_task = asyncio.to_thread(self.score_faithfulness, answer, chunks)
 
-        # DEFECT-09: return_exceptions=True lets all three tasks run to completion.
+        # return_exceptions=True lets all three tasks run to completion.
         # We then re-raise any InsufficientJudgesError after collecting all results.
         results = await asyncio.gather(
             relevance_task, consensus_task, faithfulness_task,

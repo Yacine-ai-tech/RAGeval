@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+### Changed
+- Repository sanitization pass ahead of public release: removed internal-deployment
+  ops scripts that shipped with a hardcoded service token and fabricated internal
+  fixture data (`scripts/load_real_data.py`, `test_all_prod.py`, `update_render.py`,
+  and others — these called a private production instance directly and had no place
+  in the published repo).
+- Removed the platform-specific deploy blueprint and CI auto-deploy step; the project
+  no longer assumes or documents any single hosting platform. See
+  [SELF_HOSTING.md](SELF_HOSTING.md) for vendor-neutral Docker/self-hosting
+  instructions.
+- `TELEMETRY_OPT_OUT` is now actually checked before the startup telemetry ping fires
+  (previously documented but not enforced in code). The telemetry endpoint is no
+  longer hardcoded as a fallback default — it only sends if `TELEMETRY_URL` is
+  explicitly configured.
+- Scrubbed internal service/project names and infra-tier details out of comments,
+  docstrings, and example config across the codebase and docs.
+- Added [RESEARCH.md](RESEARCH.md) documenting the research rationale behind the
+  multi-judge consensus design, and expanded [SELF_HOSTING.md](SELF_HOSTING.md) into a
+  full self-hosting guide.
+
 ## [0.1.22] - 2026-08-16
 ### Fixed
 - Comprehensive repository intelligence audit remediation. Fixed 26 critical defects across the stack.
@@ -30,8 +51,8 @@
   the generic `POSTGRES_URL` name for itself. Confirmed live twice while fixing this —
   the fallback wrote a real `rageval_log` table into another real project's production
   database before being removed (cleaned up, verified zero rows remain).
-- This project's own standalone deployment (`api.py`, e.g. this repo's Render service,
-  which sets `POSTGRES_URL` via Render's dashboard rather than this repo's `.env`) keeps
+- This project's own standalone deployment (`api.py`), where an existing hosting
+  platform's dashboard sets `POSTGRES_URL` directly rather than this repo's `.env`, keeps
   working via a narrow, one-time `POSTGRES_URL`->`RAGEVAL_POSTGRES_URL` compat copy done
   in `api.py` itself at process startup — that behavior is specific to this app's own
   entrypoint and is not part of the `rageval` library other projects import.
@@ -45,8 +66,8 @@
   `sqlite3.OperationalError: no such table: rageval_log`. `log_interaction()` (used by
   `@track`, `log_dspy_run`/`dspy_compile_callback`, and any bare library use) now
   auto-initializes the table on first write, once per process. Caught by actually
-  testing the drop-in-library path end-to-end (wiring AgentKit's DSPy compile step to
-  this package) rather than assuming the README's own pitch worked.
+  testing the drop-in-library path end-to-end (wiring a DSPy compile step in a separate
+  host project to this package) rather than assuming the README's own pitch worked.
 ### Known gotcha (documented, not changed)
 - Embedding `rageval` as a library inside a host app that has its own `POSTGRES_URL` for
   its own unrelated database will make `rageval` try to write to *that* database instead
@@ -63,8 +84,8 @@
   speaking only the generic contract: a `huggingface.co` URL is called in HF's native
   Inference API shape (`{"inputs": [...]}` in, mean-pooling per-token responses when the
   target is a plain feature-extraction pipeline rather than a sentence-embedding model).
-  Verified live against both a real Hugging Face Inference endpoint and a real on-demand
-  orchestrator host — not just unit-tested.
+  Verified live against both a real Hugging Face Inference endpoint and a real
+  self-hosted embedding server — not just unit-tested.
 ### Fixed
 - Rewrote the e2e test suite (`rageval_telemetry.spec.ts`, `exhaustive_ui.spec.ts`)
   against the real API/UI; the previous version tested a fictional `/api/*` surface and
@@ -88,8 +109,8 @@
   applies to existing deployments, not just fresh ones).
 - `dspy_compile_callback` / `log_dspy_run` promoted to the public `rageval` package
   API, with real persistence tests (previously present but uncalled from anywhere).
-- Live dogfooding: IntelAI's chatbot now logs every persona chat reply to a configured
-  RAGeval-compatible evaluator in the background (generic `RAG_EVALUATOR_URL`
+- Live dogfooding: a companion chatbot app now logs every persona chat reply to a
+  configured RAGeval-compatible evaluator in the background (generic `RAG_EVALUATOR_URL`
   contract, opt-in, never blocks the chat response).
 ### Fixed
 - Removed the Cohere/Jina hosted-embeddings backstop — embeddings are now strictly
@@ -98,8 +119,7 @@
 - `CORS_ALLOWED_ORIGINS` in `.env.example` no longer points at a sibling project's
   production domain (was a copy-paste leftover).
 - `TELEMETRY_URL` is now documented under its actual variable name (`.env.example`
-  previously listed `TELEMETRY_ENDPOINT`/`OMNI_TELEMETRY_ENDPOINT`, neither of which
-  the code reads).
+  previously listed a different variable name that the code didn't actually read).
 - README Quick Start now installs from public PyPI directly instead of a private
   package index, despite the package already being live on public PyPI.
 - `requirements.txt` (what the Dockerfile actually installs) was missing
@@ -125,13 +145,13 @@ noting the gap rather than guessing at unrecorded changes.
 ### Fixed
 - Removed multiple hardcoded default-token/admin-password fallbacks — internal-token
   auth is now fully env-driven with no insecure default.
-- Fixed a Vercel frontend mixed-content issue on the API docs page.
+- Fixed a frontend mixed-content (http/https) issue on the API docs page.
 - Synced default embedding model to BAAI/bge-m3.
 - Fixed a route-change flash caused by a nested `AnimatePresence` wrapper.
 - Replaced MAC-address-derived telemetry instance ID with a random, persisted UUID.
 - Stopped hardcoding the maintainer's gateway URL in the frontend and in e2e tests.
-- Removed Lightning AI branding and internal planning-doc references from the shipped
-  app.
+- Removed leftover third-party branding and internal planning-doc references from the
+  shipped app.
 
 ## [0.1.10]
 ### Added

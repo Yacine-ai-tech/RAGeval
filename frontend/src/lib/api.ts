@@ -88,7 +88,7 @@ function demoSessionId(): string {
 }
 
 async function req<T>(path: string, init?: RequestInit, retryCount = 0): Promise<T> {
-  // DEFECT-07 fix: only retry GET (idempotent) requests.
+  // Only retry GET (idempotent) requests.
   // Retrying POST mutations (e.g. /eval/log) after a network blip where the server
   // already committed the write causes duplicate rows, inflated metrics, and
   // duplicate alerts. For POSTs we fail immediately.

@@ -15,12 +15,11 @@ import { test, expect, Page } from '@playwright/test';
 
 const BASE_URL = process.env.RAGEVAL_URL    || process.env.TEST_BASE_URL || '/';
 const API_URL  = process.env.RAGEVAL_API_URL || '/';
-// RAGeval's own auth model is the shared X-OmniIntel-Internal-Token gate
-// (REQUIRE_INTERNAL_TOKEN, opt-in — off by default so the public dashboard itself stays
-// reachable) — not a user-login JWT, so there's nothing to fetch from another service
-// first. Empty = requests against protected routes get a 403 only if the deployment
-// opted in, which the tests below tolerate (they're checking reachability/shape, not
-// asserting auth is disabled).
+// RAGeval's own auth model is the X-OmniIntel-Internal-Token gate (REQUIRE_INTERNAL_TOKEN,
+// opt-in — off by default so the public dashboard itself stays reachable) — not a
+// user-login JWT, so there's nothing to fetch from another service first. Empty = requests
+// against protected routes get a 403 only if the deployment opted in, which the tests
+// below tolerate (they're checking reachability/shape, not asserting auth is disabled).
 const INTERNAL_TOKEN = process.env.OMNIINTEL_INTERNAL_TOKEN || '';
 
 function internalAuthHeaders(): Record<string, string> {

@@ -39,22 +39,21 @@ node_modules/
 dist/
 
 
-# Week 0 working notes (not committed)
+# Working notes (not committed)
 STATUS.md
 
 # Writing drafts (publish later, not in repo)
 drafts/
 steps.md
 
-# Redesigned SPA: built bundle IS deployed (Render Docker copies the repo)
+# The self-hosting Docker image serves the built SPA directly from the repo,
+# so the production bundle is committed rather than built at deploy time.
 frontend/node_modules/
 !frontend/dist/
 !frontend/dist/**
 frontend/playwright-report/
 frontend/test-results/
+frontend/.vercel/
 
-# Backup from the .env line-ending repair (safe to delete once verified)
-.env.bak-corrupted
-
-# Internal dev-session architecture notes (not committed) — session-specific
+# Local dev-session architecture notes (not committed) — session-specific
 ARCHITECTURE.md

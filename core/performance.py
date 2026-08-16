@@ -1,5 +1,5 @@
 """
-core/performance.py — REMOVED (DEFECT-14)
+core/performance.py — intentionally empty.
 
 This module previously contained constants (DB_POOL_SIZE, RATE_LIMIT_PER_MINUTE,
 API_TIMEOUT, etc.) and warning-suppression side-effects that executed on import.
@@ -9,6 +9,6 @@ controlled any actual behaviour — they were completely false documentation.
 The module is kept as an empty stub to avoid ImportError for any external code
 that might have imported it, but it now does nothing.
 
-Rate limiting is now implemented via slowapi in api.py (DEFECT-11 fix).
+Rate limiting is now implemented via slowapi in api.py.
 DB pooling is handled by psycopg2's connection-per-call pattern in store.py.
 """

@@ -14,11 +14,12 @@ def _client():
 
 
 def _internal_auth_headers() -> dict:
-    """The internal-token middleware gates every route except /, /health, /docs, static
-    assets, and /api/v1/auth/* when REQUIRE_INTERNAL_TOKEN=true (opt-in, off by default —
-    the public dashboard itself needs to be reachable with no token). Reuse whatever real
-    token is configured in the environment so tests exercise the actual endpoint, not
-    just the pass-through/403 behavior of the gate."""
+    """The internal-token middleware gates POST write routes only — /, /health, /docs,
+    static assets, all GET /eval/* routes, and the /eval/live websocket stay open —
+    when REQUIRE_INTERNAL_TOKEN=true (opt-in, off by default: the public dashboard
+    itself needs to be reachable with no token). Reuse whatever real token is
+    configured in the environment so tests exercise the actual endpoint, not just the
+    pass-through/403 behavior of the gate."""
     token = os.environ.get("OMNIINTEL_INTERNAL_TOKEN", "")
     return {"X-OmniIntel-Internal-Token": token} if token else {}
 
@@ -88,16 +89,16 @@ def test_eval_score_returns_503_when_insufficient_judges(monkeypatch):
     assert "judge" in r.json()["detail"].lower()
 
 
-# ─── DEFECT-04 regression ─────────────────────────────────────────────────────
+# ─── GET routes stay open to the browser regardless of the token gate ─────────
 
 def test_get_eval_routes_accessible_without_internal_token(monkeypatch):
-    """DEFECT-04: GET /eval/* endpoints must NOT be blocked by the middleware even
-    when REQUIRE_INTERNAL_TOKEN=true. These routes feed the browser dashboard — any
+    """GET /eval/* endpoints must NOT be blocked by the middleware even when
+    REQUIRE_INTERNAL_TOKEN=true. These routes feed the browser dashboard — any
     403 here means the entire UI shows empty data.
 
-    Before the fix, /eval/metrics, /eval/queries, /eval/alerts, /eval/config,
-    /eval/events, /eval/cost-report all returned 403 to browser clients.
-    After the fix, GET requests pass through regardless of the token.
+    Regression coverage: /eval/metrics, /eval/queries, /eval/alerts, /eval/config,
+    /eval/events, /eval/cost-report must all pass through GET requests regardless
+    of the token.
     """
     import pytest
     monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "true")
@@ -119,13 +120,13 @@ def test_get_eval_routes_accessible_without_internal_token(monkeypatch):
     for route in get_routes:
         r = client.get(route)  # No X-OmniIntel-Internal-Token header.
         assert r.status_code != 403, (
-            f"DEFECT-04: {route} returned 403 to a browser GET with no token. "
+            f"{route} returned 403 to a browser GET with no token. "
             "Dashboard will show empty data in production."
         )
 
 
 def test_post_eval_blocked_without_internal_token(monkeypatch):
-    """DEFECT-04: POST /eval/score and POST /eval/log must still require the token
+    """POST /eval/score and POST /eval/log must still require the token
     when REQUIRE_INTERNAL_TOKEN=true — only GETs are open to the browser."""
     monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "true")
     monkeypatch.setenv("OMNIINTEL_INTERNAL_TOKEN", "secret-sentinel-value")
@@ -145,12 +146,12 @@ def test_post_eval_blocked_without_internal_token(monkeypatch):
     )
 
 
-# ─── DEFECT-21 regression ─────────────────────────────────────────────────────
+# ─── No /api/v1/auth bypass ────────────────────────────────────────────────────
 
 def test_no_api_v1_auth_bypass_in_routes():
-    """DEFECT-21: /api/v1/auth/ exemption was dead code copied from IntelAI.
-    RAGeval has no routes there; the whitelist entry is now removed.
-    Verify the app has no routes registered under /api/v1/ either."""
+    """The middleware's old /api/v1/auth/ exemption was dead code — RAGeval has no
+    routes there — and has been removed. Verify the app has no routes registered
+    under /api/v1/ either."""
     from api import app
     paths = {r.path for r in app.routes}
     api_v1_routes = [p for p in paths if p.startswith("/api/v1/")]
