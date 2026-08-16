@@ -170,11 +170,42 @@ evaluator = RAGEvaluator()
 # Traces"/observability ask). Process-local by design; /eval/events exposes it.
 from collections import deque as _deque
 from datetime import datetime as _dt
+import asyncio
+from fastapi import WebSocket, WebSocketDisconnect
 
 _EVENTS: "_deque[Dict[str, Any]]" = _deque(maxlen=200)
+_WS_CLIENTS = set()
 
 def _emit(kind: str, **detail: Any) -> None:
-    _EVENTS.appendleft({"ts": _dt.utcnow().isoformat() + "Z", "kind": kind, **detail})
+    event = {"ts": _dt.utcnow().isoformat() + "Z", "kind": kind, **detail}
+    _EVENTS.appendleft(event)
+    
+    # Broadcast to live websocket clients
+    disconnected = set()
+    for ws in _WS_CLIENTS:
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(ws.send_json(event))
+            except RuntimeError:
+                pass
+        except Exception:
+            disconnected.add(ws)
+    _WS_CLIENTS.difference_update(disconnected)
+
+@app.websocket("/eval/live")
+async def eval_live_ws(websocket: WebSocket):
+    await websocket.accept()
+    _WS_CLIENTS.add(websocket)
+    try:
+        for event in list(_EVENTS):
+            await websocket.send_json(event)
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _WS_CLIENTS.discard(websocket)
 
 
 @app.get("/", include_in_schema=False)
