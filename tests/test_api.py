@@ -67,9 +67,15 @@ def test_api_compat_shim_copies_postgres_url_once(tmp_path):
 
 def test_eval_score_returns_503_when_insufficient_judges(monkeypatch):
     """The InsufficientJudgesError -> HTTP 503 wiring, exercised through the real
-    FastAPI request stack (middleware included), not just at the evaluator level."""
-    from rageval._compat import settings
-    monkeypatch.setattr(settings, "JUDGE_MODELS", ["anthropic/claude-haiku-4-5"])
+    FastAPI request stack (middleware included), not just at the evaluator level.
+
+    Patches rageval.evaluator.settings (the actual object the evaluator reads at
+    call time) rather than rageval._compat.settings, which may be a different
+    object after importlib.reload() in the sqlite_store fixture.
+    """
+    import rageval.evaluator as ev_mod
+    # Patch the settings object that evaluator.py actually imported.
+    monkeypatch.setattr(ev_mod.settings, "JUDGE_MODELS", ["anthropic/claude-haiku-4-5"])
     r = _client().post(
         "/eval/score",
         json={"query": "q", "answer": "a", "chunks": ["c"]},
@@ -78,5 +84,79 @@ def test_eval_score_returns_503_when_insufficient_judges(monkeypatch):
     if r.status_code in (401, 403):
         import pytest
         pytest.skip("no valid OMNIINTEL_INTERNAL_TOKEN in this environment")
-    assert r.status_code == 503
+    assert r.status_code == 503, f"Expected 503, got {r.status_code}: {r.text[:200]}"
     assert "judge" in r.json()["detail"].lower()
+
+
+# ─── DEFECT-04 regression ─────────────────────────────────────────────────────
+
+def test_get_eval_routes_accessible_without_internal_token(monkeypatch):
+    """DEFECT-04: GET /eval/* endpoints must NOT be blocked by the middleware even
+    when REQUIRE_INTERNAL_TOKEN=true. These routes feed the browser dashboard — any
+    403 here means the entire UI shows empty data.
+
+    Before the fix, /eval/metrics, /eval/queries, /eval/alerts, /eval/config,
+    /eval/events, /eval/cost-report all returned 403 to browser clients.
+    After the fix, GET requests pass through regardless of the token.
+    """
+    import pytest
+    monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "true")
+    monkeypatch.setenv("OMNIINTEL_INTERNAL_TOKEN", "secret-sentinel-value")
+    # Reload api so the middleware picks up the new env values.
+    import importlib
+    import api as api_mod
+    importlib.reload(api_mod)
+    client = TestClient(api_mod.app, raise_server_exceptions=False)
+
+    get_routes = [
+        "/eval/metrics?days=7",
+        "/eval/queries?limit=5",
+        "/eval/alerts",
+        "/eval/config",
+        "/eval/events",
+        "/eval/cost-report?days=7",
+    ]
+    for route in get_routes:
+        r = client.get(route)  # No X-OmniIntel-Internal-Token header.
+        assert r.status_code != 403, (
+            f"DEFECT-04: {route} returned 403 to a browser GET with no token. "
+            "Dashboard will show empty data in production."
+        )
+
+
+def test_post_eval_blocked_without_internal_token(monkeypatch):
+    """DEFECT-04: POST /eval/score and POST /eval/log must still require the token
+    when REQUIRE_INTERNAL_TOKEN=true — only GETs are open to the browser."""
+    monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "true")
+    monkeypatch.setenv("OMNIINTEL_INTERNAL_TOKEN", "secret-sentinel-value")
+    import importlib
+    import api as api_mod
+    importlib.reload(api_mod)
+    client = TestClient(api_mod.app, raise_server_exceptions=False)
+
+    r = client.post(
+        "/eval/score",
+        json={"query": "q", "answer": "a", "chunks": ["c"]},
+        # Deliberately no X-OmniIntel-Internal-Token header.
+    )
+    assert r.status_code == 403, (
+        "POST /eval/score should be blocked by token gate when REQUIRE_INTERNAL_TOKEN=true. "
+        f"Got {r.status_code}."
+    )
+
+
+# ─── DEFECT-21 regression ─────────────────────────────────────────────────────
+
+def test_no_api_v1_auth_bypass_in_routes():
+    """DEFECT-21: /api/v1/auth/ exemption was dead code copied from IntelAI.
+    RAGeval has no routes there; the whitelist entry is now removed.
+    Verify the app has no routes registered under /api/v1/ either."""
+    from api import app
+    paths = {r.path for r in app.routes}
+    api_v1_routes = [p for p in paths if p.startswith("/api/v1/")]
+    assert not api_v1_routes, (
+        f"Unexpected /api/v1/ routes found: {api_v1_routes}. "
+        "These would be silently auth-bypassed if the /api/v1/auth/ middleware exemption "
+        "is ever re-added."
+    )
+
