@@ -3,6 +3,7 @@ RAGeval store — SQLite default, Postgres+pgvector optional.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sqlite3
@@ -76,7 +77,8 @@ CREATE INDEX IF NOT EXISTS idx_rageval_ts ON rageval_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_rageval_review ON rageval_log(needs_review);
 CREATE INDEX IF NOT EXISTS idx_rageval_model ON rageval_log(model);
 CREATE INDEX IF NOT EXISTS idx_rageval_embedding ON rageval_log
-    USING hnsw (query_embedding vector_cosine_ops);
+    USING hnsw (query_embedding vector_cosine_ops)
+    WHERE query_embedding IS NOT NULL;
 """
 
 def _db_path() -> str:
@@ -153,24 +155,27 @@ def _ensure_initialized() -> None:
         init_rageval_table()
 
 
-async def log_interaction(
+def _write_interaction_sync(
     query: str,
     answer: str,
-    persona: Optional[str] = None,
-    scores: Optional[Dict[str, Any]] = None,
-    session_id: Optional[str] = None,
+    persona: Optional[str],
+    scores: Dict[str, Any],
+    session_id: Optional[str],
 ) -> None:
-    """Persist a single interaction. On the Postgres tier, also stores the query
-    embedding (scores["query_embedding"], a list[float] — see evaluator.score_interaction)
-    in the pgvector column when present; SQLite has no such column and this is skipped."""
+    """Sync helper that does the full log_interaction write in a single thread.
+
+    All sync work is kept in one function so it can be dispatched as a single
+    asyncio.to_thread() call from the async log_interaction() below — preventing
+    the SQLite commit-visibility issues that arose when two separate to_thread
+    dispatches were used for the init check and the execute.
+    """
     _ensure_initialized()
-    scores = scores or {}
     flags = scores.get("flags", [])
     cols = ["timestamp", "query", "answer", "persona", "model",
             "relevance", "groundedness", "faithfulness",
             "cost_usd", "latency_ms", "tokens_used",
             "flags", "session_id", "needs_review"]
-    values = (
+    values: tuple = (
         datetime.now(timezone.utc).isoformat(),
         query, answer, persona, scores.get("model"),
         scores.get("relevance"), scores.get("groundedness"), scores.get("faithfulness"),
@@ -189,23 +194,59 @@ async def log_interaction(
     sql = f"INSERT INTO rageval_log ({', '.join(cols)}) VALUES ({placeholders})"
     _execute(sql, values)
 
+
+async def log_interaction(
+    query: str,
+    answer: str,
+    persona: Optional[str] = None,
+    scores: Optional[Dict[str, Any]] = None,
+    session_id: Optional[str] = None,
+) -> None:
+    """Persist a single interaction. On the Postgres tier, also stores the query
+    embedding (scores["query_embedding"], a list[float] — see evaluator.score_interaction)
+    in the pgvector column when present; SQLite has no such column and this is skipped.
+
+    DEFECT-05 fix: the blocking psycopg2 I/O (Postgres tier) is offloaded to a
+    worker thread via asyncio.to_thread() so the uvicorn event loop stays free
+    during DB writes. All sync work is consolidated into one _write_interaction_sync()
+    call to avoid commit-visibility races from two separate thread dispatches.
+    """
+    await asyncio.to_thread(
+        _write_interaction_sync,
+        query, answer, persona, scores or {}, session_id,
+    )
+
 def _demo_session_scoping_enabled() -> bool:
     return os.environ.get("DEMO_SESSION_SCOPING", "true").lower() == "true"
 
 
 def _scope_clause(session_id: Optional[str]) -> tuple[str, tuple]:
-    """Rows with no session_id are platform telemetry (e.g. IntelAI's own dogfooding calls)
-    and stay visible to everyone; rows tied to a specific visitor session are only visible
-    to that same session. Anonymous demo isolation, not production auth — see
-    DEMO_SESSION_SCOPING in .env.example."""
-    if not _demo_session_scoping_enabled():
+    """Session-scoping clause for demo isolation.
+
+    - session_id provided: only rows matching that session (or NULL-session platform rows).
+    - session_id=None (admin / platform view): no filter — all rows visible.
+
+    Bug fix: the previous implementation returned
+    ``(session_id IS NULL OR session_id = ?, (None,))`` when session_id=None,
+    which SQL evaluates as ``session_id IS NULL OR session_id = NULL``. Since
+    ``X = NULL`` is always NULL (not TRUE) in SQL, this silently excluded all
+    rows that had a real session_id — making all session-scoped interactions
+    invisible to platform-level get_metrics() / get_query_log() calls with no
+    session_id argument.
+    """
+    if not _demo_session_scoping_enabled() or session_id is None:
         return "", ()
     return "(session_id IS NULL OR session_id = ?)", (session_id,)
 
 
 def get_metrics(days: int = 7, session_id: Optional[str] = None) -> Dict[str, Any]:
-    """Aggregate metrics over the last N days."""
+    """Aggregate metrics over the last N days.
+
+    DEFECT-16 fix: query_volume_by_hour is now computed from stored timestamps
+    instead of being hardcoded to an empty list.
+    """
     from datetime import timedelta
+    from collections import Counter as _Counter
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     scope_sql, scope_params = _scope_clause(session_id)
     sql = "SELECT * FROM rageval_log WHERE timestamp >= ?"
@@ -222,6 +263,21 @@ def get_metrics(days: int = 7, session_id: Optional[str] = None) -> Dict[str, An
         }
     n = len(rows)
     avg = lambda k: sum((r[k] or 0) for r in rows) / n
+
+    # DEFECT-16: compute query_volume_by_hour from stored timestamps.
+    hour_counts: dict = _Counter()
+    for r in rows:
+        ts_raw = r.get("timestamp") or ""
+        try:
+            # ISO format: 2024-01-15T14:32:00+00:00 — extract YYYY-MM-DDTHH
+            hour_counts[str(ts_raw)[:13]] += 1
+        except Exception:
+            pass
+    query_volume_by_hour = [
+        {"hour": h, "count": c}
+        for h, c in sorted(hour_counts.items())
+    ]
+
     return {
         "total_queries": n,
         "avg_relevance": avg("relevance"),
@@ -230,7 +286,7 @@ def get_metrics(days: int = 7, session_id: Optional[str] = None) -> Dict[str, An
         "avg_latency_ms": avg("latency_ms"),
         "total_cost_usd": sum((r["cost_usd"] or 0) for r in rows),
         "flagged_count": sum(1 for r in rows if r["needs_review"]),
-        "query_volume_by_hour": [],
+        "query_volume_by_hour": query_volume_by_hour,
     }
 
 def get_query_log(limit: int = 50, needs_review: Optional[bool] = None, session_id: Optional[str] = None) -> List[Dict[str, Any]]:

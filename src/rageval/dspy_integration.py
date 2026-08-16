@@ -1,6 +1,11 @@
 """
 RAGeval DSPy integration — log compilation runs as RAGeval events.
 
+DEFECT-10 fix: the sync wrapper previously called asyncio.run() which raises
+``RuntimeError: This event loop is already running`` in any async context.
+Now uses the same fire-and-forget helper from decorator.py so it is safe
+in both sync and async calling contexts.
+
 This module never imports ``dspy`` itself: it only accepts already-computed
 program_name/candidates/winner/eval_metric/eval_score values, so it works
 whether or not ``dspy-ai`` is installed on the caller's side. Two ways in:
@@ -24,6 +29,7 @@ import functools
 from typing import Any, Callable, Dict
 
 from .store import log_interaction
+from .decorator import _fire_and_forget  # shared fire-and-forget helper (DEFECT-10 fix)
 
 
 async def log_dspy_run(
@@ -78,6 +84,8 @@ def dspy_compile_callback(fn: Callable[..., Dict[str, Any]]) -> Callable[..., An
     @functools.wraps(fn)
     def sw(*args: Any, **kwargs: Any) -> Any:
         result = fn(*args, **kwargs)
-        asyncio.run(log_dspy_run(**_extract(result)))
+        # DEFECT-10 fix: fire-and-forget instead of asyncio.run() — safe in both
+        # sync and async calling contexts (no RuntimeError in FastAPI/Jupyter etc.).
+        _fire_and_forget(log_dspy_run(**_extract(result)))
         return result
     return sw

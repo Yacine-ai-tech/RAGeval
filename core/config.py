@@ -1,4 +1,10 @@
-"""Slim RAGeval configuration — env-driven."""
+"""Slim RAGeval configuration — env-driven.
+
+IMPORTANT: _DEFAULT_JUDGE_MODELS below must stay in sync with the constant of
+the same name in src/rageval/_compat.py. There is no runtime enforcement between
+the two settings modules (one is the app config, the other is the pip-package
+compat shim) — a single-source-of-truth refactor is tracked in the backlog.
+"""
 from __future__ import annotations
 
 import os
@@ -12,6 +18,14 @@ LOGS_DIR = BASE_DIR / "logs"
 RAGEVAL_HOME = Path(os.getenv("RAGEVAL_HOME", str(Path.home() / ".rageval")))
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 RAGEVAL_HOME.mkdir(parents=True, exist_ok=True)
+
+# Canonical default — must mirror _compat.py exactly.
+_DEFAULT_JUDGE_MODELS = (
+    "anthropic/claude-haiku-4-5,"
+    "groq/llama-3.3-70b-versatile,"
+    "gemini/gemini-flash-latest,"
+    "openai/gpt-4o-mini"
+)
 
 
 class Settings:
@@ -44,8 +58,7 @@ class Settings:
 
     JUDGE_MODELS = [
         m.strip() for m in os.getenv(
-            "JUDGE_MODELS",
-            "anthropic/claude-haiku-4-5,groq/llama-3.3-70b-versatile,gemini/gemini-1.5-flash,openai/gpt-4o-mini",
+            "JUDGE_MODELS", _DEFAULT_JUDGE_MODELS,
         ).split(",") if m.strip()
     ]
 
