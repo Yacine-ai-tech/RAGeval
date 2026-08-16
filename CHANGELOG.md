@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.22] - 2026-08-16
+### Fixed
+- Comprehensive repository intelligence audit remediation. Fixed 26 critical defects across the stack.
+- Highlights:
+  - Resolved `asyncio.run()` RuntimeError in `@track` and DSPy decorators under concurrent web frameworks (e.g., FastAPI) by replacing with fire-and-forget logic.
+  - Eliminated `psycopg2` blocking of the event loop during writes.
+  - Secured dashboard endpoints via two-tier middleware auth (GET open, POST gated).
+  - Fixed SQL logic in `_scope_clause(None)` that incorrectly hid platform telemetry.
+  - Trimmed package size by removing `FlagEmbedding` dependency (~500MB reduction).
+  - Ensured multi-judge failures do not unilaterally cancel pending embeddings/scores via `asyncio.gather(return_exceptions=True)`.
+  - Bumped Python package dependency limits to reflect correct usage, added `gpt-4o-mini` pricing.
 ## [0.1.19] - 2026-08-14
 ### Fixed
 - **Judge calls had no timeout.** Neither the `litellm.acompletion()` path nor the
