@@ -58,6 +58,9 @@ ANTHROPIC_PRICES = {
     "anthropic/claude-opus-4-7": (15.00, 75.00),
 }
 OPENAI_PRICES = {
+    # DEFECT-06 fix: add the actually configured judge model gpt-4o-mini.
+    # gpt-5/gpt-5-mini kept for forward-compat when the key is available.
+    "openai/gpt-4o-mini": (0.15, 0.60),
     "openai/gpt-5": (5.00, 15.00),
     "openai/gpt-5-mini": (0.15, 0.60),
 }
@@ -119,14 +122,7 @@ class RAGEvaluator:
         return self._embedder
 
     def _remote_embed(self, texts: List[str], model: Optional[str] = None):
-        """Embed via a remote inference endpoint (EMBEDDING_ENDPOINT), provider-agnostic:
-        dispatches on the URL's own shape, not a named-vendor config flag. A
-        huggingface.co URL is called in HF's native Inference API shape
-        ({"inputs": [...]} in, a list of vectors — or per-token vectors, mean-pooled —
-        out); anything else is called via the generic POST {url}/embed contract
-        ({"texts": [...], "model": "..."} -> {"embeddings": [...]}) that a self-hosted
-        GPU box, an orchestrator, or any other compliant host can implement. Only active
-        when INFERENCE_MODE=remote."""
+        """Embed via a remote inference endpoint (EMBEDDING_ENDPOINT), provider-agnostic."""
         if os.getenv("INFERENCE_MODE", "").strip().lower() != "remote":
             return None
 
@@ -163,11 +159,7 @@ class RAGEvaluator:
             return None
 
     def _embed(self, texts: List[str]):
-        """Embed texts with THIS evaluator's model (self.embedding_model_name): a generic remote
-        endpoint first (EMBEDDING_ENDPOINT/INFERENCE_MODE, provider-agnostic — off-box, no OOM),
-        then a local model only if USE_LOCAL_EMBEDDER is set (downloads self.embedding_model_name
-        directly on this host). Returns a numpy array or None (caller degrades to a lexical-overlap
-        score, never a hardcoded vendor-specific fallback)."""
+        """Embed texts — remote endpoint first, then local model if USE_LOCAL_EMBEDDER is set."""
         if not texts:
             return None
         remote = self._remote_embed(texts, model=self.embedding_model_name)
@@ -185,17 +177,14 @@ class RAGEvaluator:
 
     @classmethod
     def _lexical_sim(cls, a: str, b: str) -> float:
-        """Overlap coefficient — share of a's tokens covered by b. Stdlib-only fallback
-        used when no embedder is reachable, so the scorers stay useful without torch."""
+        """Overlap coefficient — share of a's tokens covered by b."""
         ta, tb = cls._tokens(a), cls._tokens(b)
         if not ta or not tb:
             return 0.0
         return len(ta & tb) / len(ta)
 
     def score_retrieval_relevance(self, query: str, chunks: List[str]) -> float:
-        """Mean cosine(query, retrieved chunks) — embeds off-box via the remote inference backend.
-        Falls back to a lexical-overlap score when no embedder is available (so a base
-        ``pip install`` returns a meaningful number instead of a silent 0.0)."""
+        """Mean cosine(query, retrieved chunks). Falls back to lexical overlap."""
         if not chunks:
             return 0.0
         vecs = self._embed([query] + chunks)
@@ -213,13 +202,9 @@ class RAGEvaluator:
             f"Answer: {answer[:2000]}\n\nContext: {context[:4000]}"
         )
 
-        # Neither the litellm nor the google-genai call below bounds itself by default —
-        # observed live: a hung judge call with no timeout stalled a 30-case eval run for
-        # ~9h wall-clock (0.1% CPU, no further log output) before it was noticed and
-        # killed manually. asyncio.wait_for() gives every judge call the same hard ceiling
-        # a slow/unresponsive provider can't exceed; a timeout is treated exactly like any
-        # other judge failure below (skip, don't fail the whole eval).
-        import asyncio
+        # Hard timeout per judge — a hung call with no timeout stalled a 30-case eval run for
+        # ~9h wall-clock before being noticed. asyncio.wait_for() gives every judge call the
+        # same ceiling a slow/unresponsive provider can't exceed.
         judge_timeout = float(os.getenv("JUDGE_TIMEOUT", "30"))
 
         if model.startswith("gemini/"):
@@ -250,8 +235,6 @@ class RAGEvaluator:
             if not _LITELLM:
                 return None
             try:
-                # No fallbacks= here on purpose: each configured judge is used as-is or
-                # skipped, never silently swapped for a different model.
                 resp = await asyncio.wait_for(
                     acompletion(
                         model=model,
@@ -265,19 +248,14 @@ class RAGEvaluator:
                 log.warning("judge %s unavailable (skipped): %s", model, e)
                 return None
 
-        # Parse the score
+        # Parse the score — strip the prompt's own wording before scanning for a number
         import re
         clean = content.replace("0.0-1.0", "").replace("0=hallucinated", "").replace("1=fully grounded", "")
         m = re.search(r"(?<![.\d])(?:0?\.\d+|1\.0+)(?![.\d])", clean) or re.search(r"\b[01]\b", clean)
         return max(0.0, min(1.0, float(m.group()))) if m else None
 
     async def score_groundedness_consensus(self, answer: str, context: str) -> Dict[str, Any]:
-        """Multi-judge consensus across the configured JUDGE_MODELS. Requires at least
-        MIN_JUDGES_REQUIRED configured judges — no single-judge fallback and no swapping
-        one judge for another. If a listed judge doesn't respond (missing key, network
-        error) it's skipped, but the run still needs at least MIN_JUDGES_REQUIRED real
-        votes to produce a consensus; short of that, this raises rather than returning a
-        quietly-degraded score."""
+        """Multi-judge consensus across the configured JUDGE_MODELS."""
         if len(settings.JUDGE_MODELS) < MIN_JUDGES_REQUIRED:
             raise InsufficientJudgesError(
                 f"RAGeval requires at least {MIN_JUDGES_REQUIRED} configured LLM judges "
@@ -292,7 +270,6 @@ class RAGEvaluator:
                 return {"model": model, "score": s}
             return None
 
-        import asyncio
         results = await asyncio.gather(*[_run_judge(model) for model in settings.JUDGE_MODELS])
         scores = [r for r in results if r is not None]
 
@@ -316,12 +293,23 @@ class RAGEvaluator:
 
     def score_faithfulness(self, answer: str, chunks: List[str]) -> float:
         """Embedding-similarity NLI proxy: max similarity to any chunk, averaged over sentences.
-        Embeds off-box via the remote inference backend (one batched call); 0.0 when unavailable."""
+
+        DEFECT-19 fix: sentence splitting now uses a regex that respects decimal numbers
+        (e.g. $4.2M, 3.14%) and does not split on dots that are surrounded by digits.
+        """
         if not chunks or not answer.strip():
             return 0.0
-        sentences = [s.strip() for s in answer.replace("!", ".").replace("?", ".").split(".") if s.strip()]
+        import re
+        # Split on sentence-ending punctuation followed by whitespace, but NOT on
+        # dots that are surrounded by digits (e.g. $4.2M, version 1.0, 3.14%).
+        sentences = [
+            s.strip()
+            for s in re.split(r"(?<![0-9])(?<=[.!?])\s+|(?<=[.!?])\s+(?![0-9])", answer)
+            if s.strip()
+        ]
+        # Fallback: if regex produced no splits just use the whole answer as one sentence.
         if not sentences:
-            return 0.0
+            sentences = [answer.strip()]
         vecs = self._embed(chunks + sentences)  # one call: [chunks..., sentences...]
         if vecs is None or len(vecs) != len(chunks) + len(sentences):
             # Lexical fallback: mean over sentences of the best token-overlap with any chunk.
@@ -345,11 +333,12 @@ class RAGEvaluator:
 
     @staticmethod
     def _persona_scope_flags(answer: str, persona: Optional[str]) -> List[str]:
-        """Persona awareness: return the out-of-scope business domains a persona's answer
-        surfaced *data* for (e.g. a CFO reply quoting a headcount / attrition figure →
-        ['people']). Only sentences that carry an actual number count as "pulling data", so
-        a polite decline ("headcount is the CHRO's domain") is NOT flagged. Personas without
-        a defined scope, or empty answers, return []."""
+        """Persona awareness: return out-of-scope business domains a persona's answer surfaced.
+
+        DEFECT-18 fix: only split on sentence-ending punctuation followed by whitespace.
+        Bare newlines (e.g. bullet lists) are no longer treated as sentence boundaries,
+        which previously caused false-positive PERSONA_SCOPE_VIOLATION flags.
+        """
         if not persona or not answer:
             return []
         allowed = PERSONA_DOMAINS.get(persona.strip().lower())
@@ -357,9 +346,10 @@ class RAGEvaluator:
             return []
         import re
         offending: set = set()
-        for sent in re.split(r"(?<=[.!?])\s+|\n", answer):
+        # Split only on ./?/! followed by whitespace — NOT on bare newlines.
+        for sent in re.split(r"(?<=[.!?])\s+", answer):
             s = sent.lower()
-            if not re.search(r"\d", s):  # no figure → a mention, not a data pull
+            if not re.search(r"\d", s):  # no figure -> a mention, not a data pull
                 continue
             for dom, terms in DOMAIN_TERMS.items():
                 if dom in allowed:
@@ -378,15 +368,33 @@ class RAGEvaluator:
         model: str,
         persona: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """End-to-end interaction scoring."""
-        import asyncio
+        """End-to-end interaction scoring.
+
+        DEFECT-09 fix: use return_exceptions=True so an InsufficientJudgesError from
+        consensus_task does not cancel the still-running relevance/faithfulness threads
+        (asyncio.to_thread tasks cannot actually be cancelled — they keep running but
+        their results were silently discarded, wasting embedding API quota).
+        """
         relevance_task = asyncio.to_thread(self.score_retrieval_relevance, query, chunks)
         consensus_task = self.score_groundedness_consensus(answer, "\n".join(chunks))
         faithfulness_task = asyncio.to_thread(self.score_faithfulness, answer, chunks)
 
-        relevance, consensus, faithfulness = await asyncio.gather(
-            relevance_task, consensus_task, faithfulness_task
+        # DEFECT-09: return_exceptions=True lets all three tasks run to completion.
+        # We then re-raise any InsufficientJudgesError after collecting all results.
+        results = await asyncio.gather(
+            relevance_task, consensus_task, faithfulness_task,
+            return_exceptions=True,
         )
+        relevance, consensus, faithfulness = results
+
+        # Re-raise judge errors — don't silently swallow them.
+        if isinstance(relevance, BaseException):
+            raise relevance
+        if isinstance(consensus, BaseException):
+            raise consensus
+        if isinstance(faithfulness, BaseException):
+            raise faithfulness
+
         cost = self.calculate_cost(tokens_used, model)
         groundedness = consensus["consensus"]
         overall_quality = 0.4 * relevance + 0.4 * groundedness + 0.2 * faithfulness
@@ -401,20 +409,13 @@ class RAGEvaluator:
         if consensus["flag_for_review"]:
             flags.append("JUDGE_DISAGREEMENT")
 
-        # Persona awareness — flag when a scoped persona (e.g. CFO) surfaces figures from a
-        # domain it shouldn't (e.g. People/HR headcount). This is the claim RAGeval makes:
-        # "catches when your CFO response pulls data it shouldn't."
         scope_violations = self._persona_scope_flags(answer, persona)
         if scope_violations:
             flags.append("PERSONA_SCOPE_VIOLATION")
 
-        # Query embedding for pgvector storage (Postgres production tier only — see
-        # store.py). One extra embed call, gated on POSTGRES_URL so the default SQLite
-        # path never pays for it. None when no embedder is reachable; store.py then
-        # just skips the column.
+        # Query embedding for pgvector storage (Postgres production tier only).
         query_embedding: Optional[List[float]] = None
         if settings.POSTGRES_URL:
-            import asyncio
             vecs = await asyncio.to_thread(self._embed, [query])
             if vecs is not None and len(vecs) == 1:
                 query_embedding = [float(x) for x in vecs[0]]
