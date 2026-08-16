@@ -3,8 +3,8 @@ import { configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // Dev: `VITE_PROXY_TARGET=http://localhost:8000 npm run dev` proxies API calls to a
-// running backend (local uvicorn or the live Render URL). Prod build is same-origin —
-// FastAPI serves dist/ itself.
+// running backend (local uvicorn or your deployed backend's URL). Prod build is
+// same-origin — FastAPI serves dist/ itself.
 const target = process.env.VITE_PROXY_TARGET || "http://localhost:8000";
 // Regex keys, not plain string prefixes: Vite's string-key proxy matching is a plain
 // prefix match, so a "/eval" key would also swallow the "/evaluate" client-side route

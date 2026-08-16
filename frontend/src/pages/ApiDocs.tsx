@@ -36,7 +36,7 @@ const ENDPOINTS: Endpoint[] = [
     path: "/health",
     desc: "Liveness check. Not gated by the internal-token middleware — always reachable, used for uptime probes and the frontend's \"waking backend\" retry loop.",
     body: null,
-    response: `{"status": "ok", "service": "rageval", "version": "0.1.0"}`,
+    response: `{"status": "ok", "service": "rageval", "version": "0.1.22"}`,
   },
   // ── Scoring ─────────────────────────────────────────────────────────────
   {
@@ -65,7 +65,7 @@ const ENDPOINTS: Endpoint[] = [
     "judges": [
       {"model": "anthropic/claude-haiku-4-5", "score": 0.85},
       {"model": "groq/llama-3.3-70b-versatile", "score": 0.8},
-      {"model": "gemini/gemini-1.5-flash", "score": 0.84}
+      {"model": "gemini/gemini-flash-latest", "score": 0.84}
     ],
     "judges_used": 3,
     "flag_for_review": false
@@ -225,7 +225,7 @@ const ENDPOINTS: Endpoint[] = [
   "judge_models": [
     "anthropic/claude-haiku-4-5",
     "groq/llama-3.3-70b-versatile",
-    "gemini/gemini-1.5-flash",
+    "gemini/gemini-flash-latest",
     "openai/gpt-4o-mini"
   ],
   "embedding_model": "BAAI/bge-m3",

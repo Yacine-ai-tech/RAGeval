@@ -1,5 +1,5 @@
 """
-core/monitoring.py — REMOVED (DEFECT-14)
+core/monitoring.py — intentionally empty.
 
 This module previously contained a Prometheus + psutil UnifiedMonitor class
 that was never imported by api.py or any other module in this project.
