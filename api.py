@@ -9,8 +9,11 @@ Endpoints:
   GET  /eval/queries?limit=50&needs_review=true
   GET  /eval/cost-report?days=30
   GET  /eval/alerts
+  GET  /eval/events
+  GET  /eval/config
   POST /eval/retrieval-bench
   POST /eval/embedding-comparison
+  WS   /eval/live
 """
 from __future__ import annotations
 import base64
@@ -28,21 +31,26 @@ import os as _os_early
 if not _os_early.environ.get("RAGEVAL_POSTGRES_URL") and _os_early.environ.get("POSTGRES_URL"):
     _os_early.environ["RAGEVAL_POSTGRES_URL"] = _os_early.environ["POSTGRES_URL"]
 
+import asyncio
 import time
+import threading
+import uuid as _uuid
+from collections import deque as _deque
+from datetime import datetime as _dt
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+import requests
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core.config import settings
 from core.logger import get_logger
 
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from rageval.evaluator import RAGEvaluator, InsufficientJudgesError
 from rageval.store import (
@@ -53,17 +61,46 @@ from rageval.store import (
     log_interaction,
 )
 
+# DEFECT-11: rate limiting — prevent LLM judge quota exhaustion from unauthenticated clients.
+# Each /eval/score or /eval/log call triggers 3 LLM judge calls; without limiting, a single
+# actor can exhaust daily Groq/Anthropic/Gemini quotas in under a minute.
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    _limiter = Limiter(key_func=get_remote_address)
+    _RATE_LIMIT_ENABLED = True
+except ImportError:
+    _limiter = None
+    _RATE_LIMIT_ENABLED = False
+
 log = get_logger(__name__)
 
-app = FastAPI(title="RAGeval", version="0.1.0", description="Drop-in LLMOps observability.")
+# DEFECT-23 fix: read the real package version instead of hardcoding "0.1.0".
+try:
+    from importlib.metadata import version as _pkg_version
+    _VERSION = _pkg_version("omnismart-rageval")
+except Exception:
+    try:
+        import tomllib  # Python 3.11+
+    except ImportError:
+        import tomli as tomllib  # fallback for < 3.11
+    try:
+        _pyproject = os.path.join(os.path.dirname(__file__), "pyproject.toml")
+        with open(_pyproject, "rb") as _f:
+            _VERSION = tomllib.load(_f).get("project", {}).get("version", "unknown")
+    except Exception:
+        _VERSION = "unknown"
+
+app = FastAPI(title="RAGeval", version=_VERSION, description="Drop-in LLMOps observability.")
+
+# DEFECT-11: attach the rate limiter to the app.
+if _RATE_LIMIT_ENABLED:
+    app.state.limiter = _limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-import threading
-import requests
-import os
-import time
-import uuid as _uuid
-
+# ─── Telemetry ────────────────────────────────────────────────────────────────
 
 def _telemetry_instance_id() -> str:
     """
@@ -90,7 +127,6 @@ def _telemetry_instance_id() -> str:
 
 
 def _send_telemetry():
-
     lock_file = os.path.join(settings.LOGS_DIR, ".telemetry_last_ping")
     try:
         if os.path.exists(lock_file):
@@ -102,101 +138,148 @@ def _send_telemetry():
         pass
 
     try:
+        # DEFECT-20 fix: removed redundant nested os.environ.get() call.
         telemetry_url = os.environ.get(
-            "TELEMETRY_URL", os.environ.get("TELEMETRY_URL", "https://gateway.ysiddo-ai-projects.app/telemetry")
+            "TELEMETRY_URL", "https://gateway.ysiddo-ai-projects.app/telemetry"
         )
-        if "log" in globals():
-            globals()["log"].info(
-                "Anonymous telemetry ping to %s (set TELEMETRY_OPT_OUT=true to disable).", telemetry_url
-            )
-        else:
-            import logging
-            logging.info(
-                "Anonymous telemetry ping to %s (set TELEMETRY_OPT_OUT=true to disable).", telemetry_url
-            )
-
+        log.info(
+            "Anonymous telemetry ping to %s (set TELEMETRY_OPT_OUT=true to disable).",
+            telemetry_url,
+        )
         requests.post(
             telemetry_url,
             json={"service": "RAGeval", "event": "startup", "instance_id": _telemetry_instance_id()},
-            timeout=2
+            timeout=2,
         )
     except Exception:
         pass
 
+
 threading.Thread(target=_send_telemetry, daemon=True).start()
-# -------------------------
 
-
-from fastapi import Request
-from fastapi.responses import JSONResponse
-import os as _os
+# ─── Middleware ───────────────────────────────────────────────────────────────
 
 @app.middleware("http")
 async def verify_internal_token(request: Request, call_next):
-    # Allow health checks, the public dashboard itself, and static assets. The
-    # /api/v1/auth/ exemption is shared boilerplate with the other OmniIntel services
-    # (IntelAI defines real routes there) — RAGeval itself has no such routes, so this
-    # branch is a no-op here, not a live auth bypass.
-    #
-    # "/" and frontend routes were missing from this list entirely: with
-    # REQUIRE_INTERNAL_TOKEN=true (this middleware's own default), the public
-    # dashboard 403'd for every real visitor -- confirmed live in production.
-    if request.method == "OPTIONS" or request.url.path in ["/", "/health", "/docs", "/openapi.json", "/api/redoc", "/favicon.png", "/favicon.ico", "/mark.png", "/logo.png"] or request.url.path.startswith("/api/v1/auth/") or request.url.path.startswith("/assets/") or request.url.path.startswith("/static/"):
+    """Token gate for service-to-service calls.
+
+    DEFECT-04 fix: the /eval/* API prefix is now explicitly allowed through for
+    browser clients (GET endpoints). Only external-write endpoints that could drain
+    LLM quota (POST /eval/log, POST /eval/score, POST /eval/retrieval-bench,
+    POST /eval/embedding-comparison) require the internal token when
+    REQUIRE_INTERNAL_TOKEN=true is set.
+
+    This two-tier policy lets:
+    - The dashboard (browser, no token) read all GET /eval/* data freely.
+    - OmniIntel mesh services (with the token) write evaluations.
+    - External @track integrations (pip users) POST with the token.
+
+    DEFECT-12 fix: removed the /api/v1/auth/ exemption — RAGeval has no such
+    routes and the exemption was dead code copied from IntelAI.
+    """
+    path = request.url.path
+    method = request.method
+
+    # Always pass: OPTIONS (CORS preflight), docs, static SPA assets, health.
+    _public = (
+        method == "OPTIONS"
+        or path in {"/", "/health", "/docs", "/openapi.json", "/api/redoc",
+                    "/favicon.png", "/favicon.ico", "/mark.png", "/logo.png"}
+        or path.startswith("/assets/")
+        or path.startswith("/static/")
+    )
+    if _public:
         return await call_next(request)
-        
+
+    # DEFECT-04 fix: all GET /eval/* routes are readable without the token
+    # (they are displayed in the public-facing browser dashboard).
+    # Only POST (write/score) routes require the internal token.
+    _eval_get = path.startswith("/eval/") and method == "GET"
+    if _eval_get:
+        return await call_next(request)
+
+    # WebSocket /eval/live — no token needed (real-time dashboard feed).
+    if path == "/eval/live":
+        return await call_next(request)
+
+    # POST/write routes: enforce token when REQUIRE_INTERNAL_TOKEN=true.
     token = request.headers.get("X-OmniIntel-Internal-Token")
-    expected_token = _os.environ.get("OMNIINTEL_INTERNAL_TOKEN", "")
-    
-    if token != expected_token and _os.environ.get("REQUIRE_INTERNAL_TOKEN", "false").lower() == "true":
-        return JSONResponse(status_code=403, content={"detail": "Missing or invalid X-OmniIntel-Internal-Token"})
-        
+    expected = os.environ.get("OMNIINTEL_INTERNAL_TOKEN", "")
+    if os.environ.get("REQUIRE_INTERNAL_TOKEN", "false").lower() == "true":
+        if not expected or token != expected:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Missing or invalid X-OmniIntel-Internal-Token"},
+            )
+
     return await call_next(request)
 
-app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ALLOWED_ORIGINS or ["*"],
-                   allow_methods=["*"], allow_headers=["*"])
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ALLOWED_ORIGINS or ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+# ─── Static assets ────────────────────────────────────────────────────────────
 
 try:
-    _assets_dir = _os.path.join(_os.path.dirname(__file__), "frontend", "dist", "assets")
-    if _os.path.exists(_assets_dir):
+    _assets_dir = os.path.join(os.path.dirname(__file__), "frontend", "dist", "assets")
+    if os.path.exists(_assets_dir):
         app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
 except Exception as e:
     log.warning("assets mount failed: %s", e)
 
 evaluator = RAGEvaluator()
 
-
-# Traces"/observability ask). Process-local by design; /eval/events exposes it.
-from collections import deque as _deque
-from datetime import datetime as _dt
-import asyncio
-from fastapi import WebSocket, WebSocketDisconnect
+# ─── Telemetry ring + WebSocket broadcast ────────────────────────────────────
+# Process-local by design; /eval/events exposes recent events via GET (polling)
+# and /eval/live exposes them via WebSocket (push).
 
 _EVENTS: "_deque[Dict[str, Any]]" = _deque(maxlen=200)
-_WS_CLIENTS = set()
+
+# DEFECT-03 fix: _WS_CLIENTS is accessed from async handlers only (the route
+# coroutines all run on the same uvicorn event loop thread), so asyncio.Lock()
+# is the correct synchronisation primitive here — no threading.Lock() needed.
+# Using a plain set() was safe for asyncio-only access but the _emit() helper was
+# called from sync code paths that could theoretically race. Now _emit() schedules
+# the broadcast as a coroutine on the running loop rather than calling ws.send_json
+# directly, and all mutations of _WS_CLIENTS happen inside async handlers only.
+_WS_CLIENTS: set = set()
+_ws_lock = asyncio.Lock()
+
 
 def _emit(kind: str, **detail: Any) -> None:
-    event = {"ts": _dt.utcnow().isoformat() + "Z", "kind": kind, **detail}
+    from datetime import timezone
+    event = {"ts": _dt.now(timezone.utc).isoformat(), "kind": kind, **detail}
     _EVENTS.appendleft(event)
-    
-    # Broadcast to live websocket clients
-    disconnected = set()
-    for ws in _WS_CLIENTS:
-        try:
+    # Schedule broadcast without touching _WS_CLIENTS from a potentially
+    # non-event-loop context — the async _broadcast() coroutine owns the lock.
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_broadcast(event))
+    except RuntimeError:
+        pass  # no running loop (test/import context) — skip broadcast
+
+
+async def _broadcast(event: Dict[str, Any]) -> None:
+    """Send event to all connected WebSocket clients (async, lock-protected)."""
+    async with _ws_lock:
+        disconnected = set()
+        for ws in list(_WS_CLIENTS):  # iterate a snapshot — safe even if lock broken
             try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(ws.send_json(event))
-            except RuntimeError:
-                pass
-        except Exception:
-            disconnected.add(ws)
-    _WS_CLIENTS.difference_update(disconnected)
+                await ws.send_json(event)
+            except Exception:
+                disconnected.add(ws)
+        _WS_CLIENTS.difference_update(disconnected)
+
 
 @app.websocket("/eval/live")
 async def eval_live_ws(websocket: WebSocket):
     await websocket.accept()
-    _WS_CLIENTS.add(websocket)
+    async with _ws_lock:
+        _WS_CLIENTS.add(websocket)
     try:
         for event in list(_EVENTS):
             await websocket.send_json(event)
@@ -205,13 +288,15 @@ async def eval_live_ws(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        _WS_CLIENTS.discard(websocket)
+        async with _ws_lock:
+            _WS_CLIENTS.discard(websocket)
 
+
+# ─── Dashboard ────────────────────────────────────────────────────────────────
 
 @app.get("/", include_in_schema=False)
 async def dashboard():
     """Serve the accessible RAGeval dashboard at the root."""
-    import os
     root = os.path.dirname(__file__)
     spa = os.path.join(root, "frontend", "dist", "index.html")
     if os.path.exists(spa):
@@ -219,12 +304,15 @@ async def dashboard():
     return {"service": "rageval", "docs": "/docs"}
 
 
-# Initialize DB on import
+# ─── DB init ─────────────────────────────────────────────────────────────────
+
 try:
     init_rageval_table()
 except Exception as e:
     log.warning("DB init failed at import: %s", e)
 
+
+# ─── Request models ──────────────────────────────────────────────────────────
 
 class LogRequest(BaseModel):
     query: str
@@ -261,11 +349,12 @@ class EmbeddingComparisonRequest(BaseModel):
     embedding_models: List[str] = ["BAAI/bge-m3", "sentence-transformers/all-MiniLM-L6-v2"]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─── Routes ──────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health() -> Dict[str, Any]:
-    return {"status": "ok", "service": "rageval", "version": "0.1.0"}
+    # DEFECT-23 fix: report the real package version, not a hardcoded "0.1.0".
+    return {"status": "ok", "service": "rageval", "version": _VERSION}
 
 
 def _resolve_session_id(request: Request, body_session_id: Optional[str] = None) -> Optional[str]:
@@ -278,6 +367,9 @@ def _resolve_session_id(request: Request, body_session_id: Optional[str] = None)
 
 @app.post("/eval/log")
 async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
+    # DEFECT-11: rate-limit write endpoints that trigger LLM judge calls.
+    if _RATE_LIMIT_ENABLED and _limiter:
+        await _limiter._check_request_limit(request, eval_log, "60/minute")  # type: ignore[arg-type]
     _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona)
     try:
         scores = await evaluator.score_interaction(
@@ -296,7 +388,10 @@ async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
 
 
 @app.post("/eval/score")
-async def eval_score(req: ScoreRequest) -> Dict[str, Any]:
+async def eval_score(req: ScoreRequest, request: Request) -> Dict[str, Any]:
+    # DEFECT-11: rate-limit score endpoint — each call triggers 3 LLM judge calls.
+    if _RATE_LIMIT_ENABLED and _limiter:
+        await _limiter._check_request_limit(request, eval_score, "60/minute")  # type: ignore[arg-type]
     _emit("interaction.received", route="/eval/score", query=req.query[:120], persona=req.persona)
     try:
         scores = await evaluator.score_interaction(
@@ -355,16 +450,16 @@ async def eval_alerts(request: Request) -> Dict[str, Any]:
 async def retrieval_bench(req: RetrievalBenchRequest) -> Dict[str, Any]:
     if not (len(req.queries) == len(req.chunks_a) == len(req.chunks_b)):
         raise HTTPException(status_code=400, detail="length_mismatch")
-    
-    import asyncio
-    async def _eval_a(q, cs):
+
+    # DEFECT-22 fix: collapsed the two identical _eval_a / _eval_b coroutines into
+    # a single reusable helper — the A/B difference is purely in the input data
+    # (chunks_a vs chunks_b), not in the scoring strategy.
+    async def _score_chunks(q, cs):
         return await asyncio.to_thread(evaluator.score_retrieval_relevance, q, cs)
-    async def _eval_b(q, cs):
-        return await asyncio.to_thread(evaluator.score_retrieval_relevance, q, cs)
-        
-    a_scores = await asyncio.gather(*[_eval_a(q, cs) for q, cs in zip(req.queries, req.chunks_a)])
-    b_scores = await asyncio.gather(*[_eval_b(q, cs) for q, cs in zip(req.queries, req.chunks_b)])
-    
+
+    a_scores = await asyncio.gather(*[_score_chunks(q, cs) for q, cs in zip(req.queries, req.chunks_a)])
+    b_scores = await asyncio.gather(*[_score_chunks(q, cs) for q, cs in zip(req.queries, req.chunks_b)])
+
     return {
         "strategy_a_mean": sum(a_scores) / max(len(a_scores), 1),
         "strategy_b_mean": sum(b_scores) / max(len(b_scores), 1),
@@ -376,20 +471,24 @@ async def retrieval_bench(req: RetrievalBenchRequest) -> Dict[str, Any]:
 
 @app.post("/eval/embedding-comparison")
 async def embedding_comparison(req: EmbeddingComparisonRequest) -> Dict[str, Any]:
-    import asyncio
     results: Dict[str, float] = {}
-    
+
     async def _eval_model(model):
         ev = RAGEvaluator(embedding_model=model)
-        scores = await asyncio.gather(*[asyncio.to_thread(ev.score_retrieval_relevance, q, cs) for q, cs in zip(req.queries, req.chunks)])
+        scores = await asyncio.gather(
+            *[asyncio.to_thread(ev.score_retrieval_relevance, q, cs)
+              for q, cs in zip(req.queries, req.chunks)]
+        )
         return model, sum(scores) / max(len(scores), 1)
-        
+
     res = await asyncio.gather(*[_eval_model(m) for m in req.embedding_models])
     for model, score in res:
         results[model] = score
-        
+
     return {"results": results, "best": max(results, key=results.get) if results else None}
 
+
+# ─── SPA fallback (must be last) ─────────────────────────────────────────────
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def spa_fallback(full_path: str):
@@ -401,7 +500,6 @@ async def spa_fallback(full_path: str):
     Real static files in frontend/dist/ (favicon, logo, sw.js, ...) are
     served directly rather than falling back to index.html for them.
     """
-    import os
     root = os.path.dirname(__file__)
     dist = os.path.realpath(os.path.join(root, "frontend", "dist"))
     candidate = os.path.realpath(os.path.join(dist, full_path))
@@ -411,6 +509,3 @@ async def spa_fallback(full_path: str):
     if os.path.exists(spa):
         return FileResponse(spa)
     raise HTTPException(status_code=404, detail="Not Found")
-
-
-

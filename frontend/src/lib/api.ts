@@ -88,12 +88,19 @@ function demoSessionId(): string {
 }
 
 async function req<T>(path: string, init?: RequestInit, retryCount = 0): Promise<T> {
+  // DEFECT-07 fix: only retry GET (idempotent) requests.
+  // Retrying POST mutations (e.g. /eval/log) after a network blip where the server
+  // already committed the write causes duplicate rows, inflated metrics, and
+  // duplicate alerts. For POSTs we fail immediately.
+  const isGet = !init?.method || init.method.toUpperCase() === "GET";
+
   try {
     const headers = new Headers(init?.headers);
     headers.set("X-Demo-Session-Id", demoSessionId());
     const res = await fetch(BASE + path, { ...init, headers });
     if (!res.ok) {
-      if (res.status >= 500 && retryCount < 5) {
+      // Retry 5xx on GET requests only.
+      if (isGet && res.status >= 500 && retryCount < 5) {
         await delay(2000 * (retryCount + 1));
         return req<T>(path, init, retryCount + 1);
       }
@@ -106,7 +113,8 @@ async function req<T>(path: string, init?: RequestInit, retryCount = 0): Promise
     }
     return res.json() as Promise<T>;
   } catch (e) {
-    if (retryCount < 5) {
+    // Only retry GET requests on network-level failures.
+    if (isGet && retryCount < 5) {
       await delay(2000 * (retryCount + 1));
       return req<T>(path, init, retryCount + 1);
     }
