@@ -96,11 +96,11 @@ def chain_invoke(query: str, context_chunks: list[str]):
 | POST   | /eval/embedding-comparison    | Compare embedding models                  |
 | WS     | /eval/live                    | Real-time event feed                      |
 
-Full reference with request/response shapes: the in-app **API Docs** page (`/api-docs` in the dashboard), or [SELF_HOSTING.md](SELF_HOSTING.md).
+Full reference with request/response shapes: the in-app **API Docs** page (`/api-docs` in the dashboard).
 
 ## Tests
 
-50 test functions across smoke, API, evaluator, decorator, DSPy integration, store, and e2e:
+70+ test functions across smoke, API, evaluator, decorator, DSPy integration, store, and e2e:
 
 ```bash
 pytest tests/ -q
