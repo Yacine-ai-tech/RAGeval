@@ -45,12 +45,19 @@ evaluators" line of work (see the same panel-of-judges prior art referenced in
 [`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md#2026-landscape)) is the direct inspiration for
 RAGeval's design: no single-judge fallback, at least two independently configured judge models
 scoring every query, and the consensus (plus the judges' disagreement/stdev) surfaced rather than
-collapsed into an opaque single number. The idea is that biases specific to one model are less
-likely to be shared across judges from different providers and model families, so averaging (or
-requiring agreement) damps out at least some of that noise. This is a plausibility argument backed
-by general literature, not a claim that RAGeval's specific two- or three-judge setup has been
-independently validated at scale — see the benchmark doc's caveats for what has actually been
-measured.
+collapsed into an opaque single number.
+
+**What a real N=200 run against this codebase's own aggregation actually found, and it's worth
+being direct about it:** unweighted averaging did *not* beat the strongest individual judge on that
+run (see the benchmark doc's Headline) — a materially weaker judge in the panel pulled the plain
+mean down below what the single best judge achieved alone. The general literature's case for
+panels — that biases specific to one model are less likely to be shared across judges from
+different providers, so *some* aggregation should reduce that noise — is not the same claim as "an
+unweighted mean of whichever judges respond is the best aggregation," and RAGeval's current
+implementation is the latter, simpler thing. The disagreement/stdev signal the panel produces
+still adds real value (see the benchmark doc), but the headline consensus *score* itself, as
+currently aggregated, is not shown to beat picking the single strongest available judge. That's a
+genuine, measured limitation of the current design, not a hypothetical one.
 
 ## Persona/role-scoped evaluation: a distinctive angle, honestly scoped
 
@@ -95,24 +102,29 @@ these other frameworks for other axes of evaluation.
 
 ## Future directions
 
-Two extensions follow naturally from what's already implemented, rather than being a
-departure from it:
+Three extensions follow naturally from what's already implemented and measured, rather than
+being a departure from it:
 
-- **Validating the persona-scope heuristic against labels.** The term-list flagging
-  described above works as a practical signal today, but turning it into a properly
-  evaluated method — a labeled set of persona/answer pairs with human judgments of whether
-  a scope violation actually occurred, precision/recall against that label set, and
-  comparison against a learned classifier baseline — would let it be reported with the same
-  rigor as the groundedness numbers in the benchmark doc, rather than described qualitatively
-  as it is now.
-- **Scaling the multi-judge benchmark.** The benchmark doc is explicit that N=25
-  questions/50 examples is a sanity check, not a large-scale result. Running the same
-  methodology at a few hundred to a thousand questions, and against more than two judges,
-  would produce a result worth citing with real confidence intervals instead of directional
-  numbers.
+- **Testing a non-uniform aggregation.** The N=200 result above is a specific, measured
+  motivation for this, not a hypothetical one: an unweighted mean of whichever judges respond
+  underperformed the single strongest judge on that run. Accuracy-weighted averaging, or a
+  majority vote requiring minimum agreement, are natural next things to test against the same
+  labelled data — while keeping the properties (no single point of failure, disagreement
+  surfaced rather than hidden) that motivate using more than one judge in the first place.
+- **A second, RAG-specific dataset.** HaluEval-QA is a general hallucination-detection
+  benchmark, not one built around retrieval-augmented generation specifically. Adding RAGTruth
+  (which does span-level hallucination annotation in RAG outputs) or a hand-labeled sample of
+  real production traffic would check whether the judge-strength ordering seen on HaluEval
+  holds outside one dataset's particular way of constructing hallucinated answers.
+- **Validating the persona-scope heuristic against labels.** The term-list flagging described
+  above works as a practical signal today, but turning it into a properly evaluated method — a
+  labeled set of persona/answer pairs with human judgments of whether a scope violation
+  actually occurred, precision/recall against that label set, and comparison against a learned
+  classifier baseline — would let it be reported with the same rigor as the groundedness
+  numbers in the benchmark doc, rather than described qualitatively as it is now.
 
-Neither of these is committed or scheduled here — they're just the honest next steps that
-follow from being specific about what today's numbers do and don't establish.
+None of these is committed or scheduled here — they're the honest next steps that follow from
+being specific about what today's numbers do and don't establish.
 
 ## Further reading
 
