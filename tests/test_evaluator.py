@@ -306,3 +306,41 @@ def test_score_interaction_consensus_failure_does_not_crash_other_tasks(monkeypa
             query="test", answer="test answer", chunks=["test context"],
             tokens_used=10, latency_ms=100.0, model="groq/openai/gpt-oss-120b",
         ))
+
+
+# ─── score_ranking: precision@k / recall@k / MRR ───────────────────────────────
+
+def test_score_ranking_perfect_top_rank():
+    ranked = ["a", "b", "c", "d", "e"]
+    relevant = ["a"]
+    m = RAGEvaluator.score_ranking(ranked, relevant, precision_k=5, recall_k=5)
+    assert m["precision_at_k"] == pytest.approx(1 / 5)  # 1 hit out of 5 slots
+    assert m["recall_at_k"] == pytest.approx(1.0)        # the only relevant doc was retrieved
+    assert m["reciprocal_rank"] == pytest.approx(1.0)    # relevant doc ranked first
+
+
+def test_score_ranking_relevant_doc_ranked_third():
+    ranked = ["x", "y", "a", "z"]
+    relevant = ["a"]
+    m = RAGEvaluator.score_ranking(ranked, relevant, precision_k=5, recall_k=5)
+    assert m["reciprocal_rank"] == pytest.approx(1 / 3)
+
+
+def test_score_ranking_precision_and_recall_at_different_k():
+    ranked = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+    relevant = {"a", "e", "j"}  # relevant docs at ranks 1, 5, 10
+    m = RAGEvaluator.score_ranking(ranked, list(relevant), precision_k=5, recall_k=10)
+    assert m["precision_at_k"] == pytest.approx(2 / 5)   # a, e in top 5
+    assert m["recall_at_k"] == pytest.approx(3 / 3)      # a, e, j all in top 10
+
+
+def test_score_ranking_no_relevant_docs_retrieved():
+    ranked = ["x", "y", "z"]
+    relevant = ["a", "b"]
+    m = RAGEvaluator.score_ranking(ranked, relevant, precision_k=5, recall_k=5)
+    assert m == {"precision_at_k": 0.0, "recall_at_k": 0.0, "reciprocal_rank": 0.0}
+
+
+def test_score_ranking_empty_relevant_set_is_zero_not_divide_by_zero():
+    m = RAGEvaluator.score_ranking(["a", "b"], [], precision_k=5, recall_k=5)
+    assert m == {"precision_at_k": 0.0, "recall_at_k": 0.0, "reciprocal_rank": 0.0}

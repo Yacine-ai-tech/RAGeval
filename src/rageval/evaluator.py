@@ -192,6 +192,50 @@ class RAGEvaluator:
         sims = cosine_similarity(vecs[:1], vecs[1:])[0]
         return float(np.mean(sims))
 
+    @staticmethod
+    def score_ranking(
+        ranked_chunks: List[str],
+        relevant_chunks: List[str],
+        precision_k: int = 5,
+        recall_k: int = 10,
+    ) -> Dict[str, float]:
+        """Standard IR ranking metrics for one query, against labeled ground truth.
+
+        ``ranked_chunks`` is the retrieved chunk texts in rank order (best first);
+        ``relevant_chunks`` is the ground-truth set of chunk texts that should have been
+        retrieved for this query. Relevance is exact-text membership — the same
+        chunk-text-as-identity convention the rest of this API already uses (chunks are
+        plain strings everywhere else too), so no separate chunk-ID scheme is needed.
+
+        Unlike ``score_retrieval_relevance`` (embedding similarity, needs no labels),
+        precision/recall/MRR require this ground truth and measure something different:
+        whether the *actually relevant* documents were retrieved and ranked highly, not
+        just whether retrieved text is topically close to the query.
+        """
+        relevant_set = set(relevant_chunks)
+        if not relevant_set:
+            return {"precision_at_k": 0.0, "recall_at_k": 0.0, "reciprocal_rank": 0.0}
+
+        top_p = ranked_chunks[:precision_k] if precision_k > 0 else []
+        precision_at_k = (
+            sum(1 for c in top_p if c in relevant_set) / precision_k if precision_k > 0 else 0.0
+        )
+
+        top_r = ranked_chunks[:recall_k] if recall_k > 0 else []
+        recall_at_k = sum(1 for c in top_r if c in relevant_set) / len(relevant_set)
+
+        reciprocal_rank = 0.0
+        for i, c in enumerate(ranked_chunks, start=1):
+            if c in relevant_set:
+                reciprocal_rank = 1.0 / i
+                break
+
+        return {
+            "precision_at_k": precision_at_k,
+            "recall_at_k": recall_at_k,
+            "reciprocal_rank": reciprocal_rank,
+        }
+
     async def _judge_groundedness(self, answer: str, context: str, model: str) -> Optional[float]:
         """One LLM judge call. Returns a float 0-1, or ``None`` when the judge is unavailable."""
         prompt = (

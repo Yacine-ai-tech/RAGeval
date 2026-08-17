@@ -336,8 +336,14 @@ class ScoreRequest(BaseModel):
 
 class RetrievalBenchRequest(BaseModel):
     queries: List[str]
-    chunks_a: List[List[str]]  # one list per query for strategy A
-    chunks_b: List[List[str]]
+    chunks_a: List[List[str]]  # ranked chunk text per query, strategy A (best first)
+    chunks_b: List[List[str]]  # ranked chunk text per query, strategy B
+    # Ground-truth relevant chunk text per query, optional. When given, enables
+    # precision@k / recall@k / MRR (standard IR ranking metrics) in addition to the
+    # embedding-similarity relevance score, which is always computed and needs no labels.
+    relevant_chunks: Optional[List[List[str]]] = None
+    precision_k: int = 5
+    recall_k: int = 10
 
 
 class EmbeddingComparisonRequest(BaseModel):
@@ -444,23 +450,70 @@ async def eval_alerts(request: Request) -> Dict[str, Any]:
 
 @app.post("/eval/retrieval-bench")
 async def retrieval_bench(req: RetrievalBenchRequest) -> Dict[str, Any]:
-    if not (len(req.queries) == len(req.chunks_a) == len(req.chunks_b)):
+    n = len(req.queries)
+    if not (n == len(req.chunks_a) == len(req.chunks_b)):
         raise HTTPException(status_code=400, detail="length_mismatch")
+    if req.relevant_chunks is not None and len(req.relevant_chunks) != n:
+        raise HTTPException(status_code=400, detail="relevant_chunks_length_mismatch")
 
     # A single reusable helper — the A/B difference is purely in the input data
     # (chunks_a vs chunks_b), not in the scoring strategy.
     async def _score_chunks(q, cs):
         return await asyncio.to_thread(evaluator.score_retrieval_relevance, q, cs)
 
-    a_scores = await asyncio.gather(*[_score_chunks(q, cs) for q, cs in zip(req.queries, req.chunks_a)])
-    b_scores = await asyncio.gather(*[_score_chunks(q, cs) for q, cs in zip(req.queries, req.chunks_b)])
+    a_relevance = await asyncio.gather(*[_score_chunks(q, cs) for q, cs in zip(req.queries, req.chunks_a)])
+    b_relevance = await asyncio.gather(*[_score_chunks(q, cs) for q, cs in zip(req.queries, req.chunks_b)])
+
+    def _ranking_summary(chunks_per_query: List[List[str]]) -> Optional[Dict[str, Any]]:
+        if req.relevant_chunks is None:
+            return None
+        per_query = [
+            RAGEvaluator.score_ranking(cs, rel, req.precision_k, req.recall_k)
+            for cs, rel in zip(chunks_per_query, req.relevant_chunks)
+        ]
+        m = max(len(per_query), 1)
+        return {
+            "precision_at_k": sum(q["precision_at_k"] for q in per_query) / m,
+            "recall_at_k": sum(q["recall_at_k"] for q in per_query) / m,
+            "mrr": sum(q["reciprocal_rank"] for q in per_query) / m,
+            "per_query": per_query,
+        }
+
+    a_ranking = _ranking_summary(req.chunks_a)
+    b_ranking = _ranking_summary(req.chunks_b)
+    a_mean = sum(a_relevance) / max(len(a_relevance), 1)
+    b_mean = sum(b_relevance) / max(len(b_relevance), 1)
+
+    # Winner: when ground truth was supplied, decide on ranking quality (precision/recall
+    # F1 @k) rather than embedding similarity — that's the whole point of providing labels.
+    if a_ranking is not None and b_ranking is not None:
+        def _f1(ranking: Dict[str, Any]) -> float:
+            p, r = ranking["precision_at_k"], ranking["recall_at_k"]
+            return 2 * p * r / (p + r) if (p + r) else 0.0
+        winner = "a" if _f1(a_ranking) >= _f1(b_ranking) else "b"
+    else:
+        winner = "a" if a_mean >= b_mean else "b"
+
+    def _strategy_result(mean_relevance: float, per_query_relevance: List[float],
+                          ranking: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
+            "mean_relevance": mean_relevance,
+            "per_query_relevance": per_query_relevance,
+        }
+        if ranking is not None:
+            result["precision_at_k"] = ranking["precision_at_k"]
+            result["recall_at_k"] = ranking["recall_at_k"]
+            result["mrr"] = ranking["mrr"]
+            result["per_query_ranking"] = ranking["per_query"]
+        return result
 
     return {
-        "strategy_a_mean": sum(a_scores) / max(len(a_scores), 1),
-        "strategy_b_mean": sum(b_scores) / max(len(b_scores), 1),
-        "winner": "a" if sum(a_scores) >= sum(b_scores) else "b",
-        "per_query_a": a_scores,
-        "per_query_b": b_scores,
+        "strategy_a": _strategy_result(a_mean, a_relevance, a_ranking),
+        "strategy_b": _strategy_result(b_mean, b_relevance, b_ranking),
+        "winner": winner,
+        "has_ground_truth": req.relevant_chunks is not None,
+        "precision_k": req.precision_k,
+        "recall_k": req.recall_k,
     }
 
 
