@@ -14,7 +14,14 @@ this run does and does not establish.
 - **Dataset:** HaluEval-QA. Each question yields **2 labelled examples** against the same
   `knowledge` context: the `right_answer` (grounded = 1) and the `hallucinated_answer`
   (grounded = 0).
-- **Judges:** Claude Haiku 4.5 + Groq Llama-3.3-70B (the `JUDGE_MODELS` configured for this run).
+- **Judges (at the time of this run):** Claude Haiku 4.5 + Groq Llama-3.3-70B (the
+  `JUDGE_MODELS` configured when these numbers were produced). **Note:** Groq later
+  deprecated `llama-3.3-70b-versatile`; the project's current default `JUDGE_MODELS`
+  (see `.env.example`) uses `groq/openai/gpt-oss-120b` in its place, alongside Gemini
+  Flash and GPT-4o-mini as additional judges. The numbers below reflect the two-judge
+  config actually run, not today's default four-judge config — re-run
+  `python eval/run_judge_benchmark.py --n 25` against your own `.env` to get numbers for
+  your current judge set; results will differ with a different judge count/mix.
 - **Decision threshold:** consensus score ≥ 0.6 → classified "grounded".
 - **Sample size:** N = 25 questions → **50 labelled examples** (balanced 25/25 grounded vs
   hallucinated by construction).

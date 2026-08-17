@@ -52,6 +52,28 @@ by general literature, not a claim that RAGeval's specific two- or three-judge s
 independently validated at scale — see the benchmark doc's caveats for what has actually been
 measured.
 
+## Persona/role-scoped evaluation: a distinctive angle, honestly scoped
+
+Beyond groundedness and faithfulness, RAGeval flags when a persona-scoped answer surfaces
+content from a business domain that persona shouldn't have access to (e.g. a CFO-scoped
+assistant's answer citing headcount/HR figures). The underlying idea — checking generated
+output against an authorization boundary — borrows from role-based access control (RBAC),
+a decades-old access-control model (Ferraiolo & Kuhn, 1992) applied here to LLM output
+rather than to a data store.
+
+Two things are worth being precise about. First, none of the general-purpose RAG-evaluation
+frameworks cited above (RAGAS, ARES, TruLens) or the observability platforms (Phoenix,
+Langfuse, DeepEval) ship a persona/role-scope axis alongside groundedness — as far as this
+project is aware, that combination is not something those tools do, which makes it a
+genuinely distinctive practical feature of RAGeval rather than a reimplementation of
+existing tooling. Second, the implementation itself is a lightweight, explainable heuristic
+— matching an answer's sentences against a per-domain term list (see `PERSONA_DOMAINS` /
+`DOMAIN_TERMS` in `evaluator.py`) — not a trained classifier, and RAGeval does not (yet)
+publish a labeled dataset measuring that heuristic's own precision/recall as a scope-violation
+detector. Treat it as a useful, auditable signal for a first pass at role-scope drift, not as
+a formally validated evaluation method in the way HaluEval-based groundedness numbers (see
+the benchmark doc) are validated against labels.
+
 ## Where RAGeval sits in the RAG-evaluation landscape
 
 RAGeval is one of several tools built specifically to evaluate RAG pipelines rather than general
@@ -70,6 +92,27 @@ consensus rather than a single configurable judge. It does not attempt to replic
 ARES's full metric suites, and reasonable users evaluating a RAG pipeline in 2026 might use RAGeval
 for its observability/consensus-groundedness angle alongside — not necessarily instead of — one of
 these other frameworks for other axes of evaluation.
+
+## Future directions
+
+Two extensions follow naturally from what's already implemented, rather than being a
+departure from it:
+
+- **Validating the persona-scope heuristic against labels.** The term-list flagging
+  described above works as a practical signal today, but turning it into a properly
+  evaluated method — a labeled set of persona/answer pairs with human judgments of whether
+  a scope violation actually occurred, precision/recall against that label set, and
+  comparison against a learned classifier baseline — would let it be reported with the same
+  rigor as the groundedness numbers in the benchmark doc, rather than described qualitatively
+  as it is now.
+- **Scaling the multi-judge benchmark.** The benchmark doc is explicit that N=25
+  questions/50 examples is a sanity check, not a large-scale result. Running the same
+  methodology at a few hundred to a thousand questions, and against more than two judges,
+  would produce a result worth citing with real confidence intervals instead of directional
+  numbers.
+
+Neither of these is committed or scheduled here — they're just the honest next steps that
+follow from being specific about what today's numbers do and don't establish.
 
 ## Further reading
 
