@@ -36,7 +36,7 @@ def test_calculate_cost_unknown_model_is_zero():
 
 
 def test_pricing_tables_have_core_models():
-    assert "groq/llama-3.3-70b-versatile" in GROQ_PRICES
+    assert "groq/openai/gpt-oss-120b" in GROQ_PRICES
     assert "anthropic/claude-sonnet-4-6" in ANTHROPIC_PRICES
 
 
@@ -75,7 +75,7 @@ def test_consensus_raises_when_fewer_than_two_judges_respond(monkeypatch):
     network error) still raises — no silent single-judge consensus, no swapping in a
     different judge as a fallback."""
     monkeypatch.setattr(settings, "JUDGE_MODELS", [
-        "anthropic/claude-haiku-4-5", "groq/llama-3.3-70b-versatile", "openai/gpt-4o-mini",
+        "anthropic/claude-haiku-4-5", "groq/openai/gpt-oss-120b", "openai/gpt-4o-mini",
     ])
 
     async def _fake_judge(self, answer, context, model):
@@ -89,7 +89,7 @@ def test_consensus_raises_when_fewer_than_two_judges_respond(monkeypatch):
 
 def test_consensus_succeeds_with_exactly_two_responding_judges(monkeypatch):
     monkeypatch.setattr(settings, "JUDGE_MODELS", [
-        "anthropic/claude-haiku-4-5", "groq/llama-3.3-70b-versatile",
+        "anthropic/claude-haiku-4-5", "groq/openai/gpt-oss-120b",
     ])
 
     async def _fake_judge(self, answer, context, model):
@@ -197,7 +197,7 @@ def test_judge_call_has_no_fallback_model_param(monkeypatch):
     import rageval.evaluator as evaluator_mod
     monkeypatch.setattr(evaluator_mod, "acompletion", _fake_acompletion)
     ev = RAGEvaluator()
-    asyncio.run(ev._judge_groundedness("answer", "context", model="groq/llama-3.3-70b-versatile"))
+    asyncio.run(ev._judge_groundedness("answer", "context", model="groq/openai/gpt-oss-120b"))
     assert "fallbacks" not in captured
 
 
@@ -274,7 +274,7 @@ def test_track_sync_wrapper_does_not_crash_in_async_context():
     @track-decorated sync function from within an async context does NOT raise."""
     from rageval.decorator import track
 
-    @track(model="groq/llama-3.3-70b-versatile")
+    @track(model="groq/openai/gpt-oss-120b")
     def dummy_rag(query: str) -> str:
         return "The answer is 42."
 
@@ -304,5 +304,5 @@ def test_score_interaction_consensus_failure_does_not_crash_other_tasks(monkeypa
     with pytest.raises(InsufficientJudgesError):
         asyncio.run(ev.score_interaction(
             query="test", answer="test answer", chunks=["test context"],
-            tokens_used=10, latency_ms=100.0, model="groq/llama-3.3-70b-versatile",
+            tokens_used=10, latency_ms=100.0, model="groq/openai/gpt-oss-120b",
         ))

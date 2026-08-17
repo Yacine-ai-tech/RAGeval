@@ -199,7 +199,7 @@ test.describe('RAGeval Mocked Evaluation Flow', () => {
       consensus: 0.79, stdev: 0.05, judges_used: 2, flag_for_review: false,
       judges: [
         { model: 'anthropic/claude-haiku-4-5', score: 0.81 },
-        { model: 'groq/llama-3.3-70b-versatile', score: 0.77 },
+        { model: 'groq/openai/gpt-oss-120b', score: 0.77 },
       ],
     },
     cost_usd: 0.00042, latency_ms: 340, tokens_used: 210,

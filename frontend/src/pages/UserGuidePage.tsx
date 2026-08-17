@@ -70,7 +70,7 @@ export default function UserGuidePage() {
         <Section icon={Users} iconColor="text-purple-400" title="Multi-Judge Consensus & Disagreement Flagging">
           <p>
             Groundedness isn't scored by a single model. By default RAGeval asks a panel of judges —
-            Claude Haiku 4.5, Groq Llama 3.3 70B, Gemini Flash, and GPT-4o-mini (configurable via
+            Claude Haiku 4.5, Groq (openai/gpt-oss-120b), Gemini Flash, and GPT-4o-mini (configurable via
             the <code className="text-green-300">JUDGE_MODELS</code> env var, comma-separated) — the same
             question: "is this answer fully supported by the context?" Each judge returns a 0–1 score;
             judges whose provider key isn't configured are skipped, so the consensus only reflects
@@ -104,7 +104,7 @@ async def answer_question(query: str, context_chunks: list[str]) -> str:
           <p>
             <code className="text-green-300">track()</code> takes two optional keyword args:{' '}
             <code className="text-green-300">model</code> (defaults to{' '}
-            <code className="text-green-300">"groq/llama-3.3-70b-versatile"</code>, used for cost
+            <code className="text-green-300">"groq/openai/gpt-oss-120b"</code>, used for cost
             calculation) and <code className="text-green-300">persona</code> (used for scope-compliance
             checks). Your wrapped function should accept <code className="text-green-300">query</code> as
             its first argument and return either the answer string directly, or a dict with{' '}
