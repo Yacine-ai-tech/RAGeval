@@ -14,46 +14,58 @@ this run does and does not establish.
 - **Dataset:** HaluEval-QA. Each question yields **2 labelled examples** against the same
   `knowledge` context: the `right_answer` (grounded = 1) and the `hallucinated_answer`
   (grounded = 0).
-- **Judges (at the time of this run):** Claude Haiku 4.5 + Groq Llama-3.3-70B (the
-  `JUDGE_MODELS` configured when these numbers were produced). **Note:** Groq later
-  deprecated `llama-3.3-70b-versatile`; the project's current default `JUDGE_MODELS`
-  (see `.env.example`) uses `groq/openai/gpt-oss-120b` in its place, alongside Gemini
-  Flash and GPT-4o-mini as additional judges. The numbers below reflect the two-judge
-  config actually run, not today's default four-judge config — re-run
-  `python eval/run_judge_benchmark.py --n 25` against your own `.env` to get numbers for
-  your current judge set; results will differ with a different judge count/mix.
+- **Judges configured:** the project's current default four-judge `JUDGE_MODELS` (see
+  `.env.example`) — Claude Haiku 4.5, Groq `gpt-oss-120b`, Gemini Flash, GPT-4o-mini.
+  **What actually responded in this run** differed per judge, and that variance is itself
+  reported rather than smoothed over: Claude Haiku 4.5 and Groq `gpt-oss-120b` answered all
+  50 examples; Gemini Flash answered the first 7 before hitting its free-tier daily request
+  quota (a real, externally-imposed limit, not a code fault) and was skipped for the rest;
+  GPT-4o-mini had no API key configured in this run's environment and was skipped for all
+  50. This is the actual production consensus behavior — RAGeval never substitutes a
+  different judge or fails the whole call when one judge is unavailable, it scores from
+  however many of the configured judges (minimum 2) actually respond per call — exercised
+  here by real, uncontrived API conditions rather than a mocked scenario.
 - **Decision threshold:** consensus score ≥ 0.6 → classified "grounded".
 - **Sample size:** N = 25 questions → **50 labelled examples** (balanced 25/25 grounded vs
   hallucinated by construction).
 
 ## Results (real run)
 
-| Metric | Consensus | Claude Haiku (solo) | Groq Llama (solo) |
-|--------|-----------|---------------------|-------------------|
-| Accuracy | **0.800** | 0.780 | 0.767 |
-| Precision | 0.826 | — | — |
-| Recall | 0.760 | — | — |
-| F1 | **0.792** | — | — |
-| ROC-AUC (raw consensus) | **0.880** | — | — |
+| Metric | Consensus (2–3 judges/example) | Claude Haiku 4.5 (solo, n=50) | Groq gpt-oss-120b (solo, n=50) | Gemini Flash (solo, n=7) |
+|--------|-----------|---------------------|-------------------|-------------------|
+| Accuracy | **0.900** | 0.780 | 0.900 | 1.000 |
+| Precision | 0.885 | — | — | — |
+| Recall | 0.920 | — | — | — |
+| F1 | **0.902** | — | — | — |
+| ROC-AUC (raw consensus) | **0.936** | — | — | — |
 
-**Headline:** on this sample, multi-judge **consensus (0.80 accuracy) edges out every individual
-judge** (0.78 / 0.767) — consistent with the project's core design thesis, though the margin is
-modest and N=50 is small enough that this should be read as suggestive, not conclusive. ROC-AUC of
-0.880 indicates the raw (pre-threshold) consensus score separates grounded from hallucinated
-answers reasonably well on this dataset.
+**Headline, stated plainly:** consensus accuracy (0.900) clearly exceeded Claude Haiku 4.5 solo
+(0.780), but on this run it *matched* — did not exceed — Groq `gpt-oss-120b` solo, which was
+individually strong on this sample. That's a different picture from an earlier run against the
+now-deprecated `llama-3.3-70b-versatile`, where consensus beat both individual judges outright,
+and it's reported here rather than left out: a stronger individual judge narrows the gap consensus
+provides, which is itself a real and useful finding, not just a less flattering one. Gemini Flash's
+1.000 accuracy is on only 7 examples (before its quota cut it off) — too small a sample to draw any
+conclusion from; it is not evidence Gemini is "the best judge" here. ROC-AUC of 0.936 indicates the
+raw (pre-threshold) consensus score separates grounded from hallucinated answers well on this
+dataset.
 
 **Honest caveat — judge disagreement as an error signal:** mean judge-disagreement (stdev across
-judges) was only marginally higher on wrong predictions than on correct ones (0.173 vs 0.170) —
-directionally in the expected direction, but not a strong or statistically robust signal at
-N=50. The `flag_for_review` heuristic that leans on this signal would need a larger labelled set
-and proper threshold tuning before it could be claimed as a reliable hallucination alarm; right now
-treat it as a weak prior, not a detector.
+whichever judges responded) was clearly higher on wrong predictions than on correct ones (0.297 vs
+0.090) — a more pronounced gap than an earlier run showed (0.173 vs 0.170). Still: N=50 with a
+per-example judge count that varies between 2 and 3 is not a controlled setup, so treat this as a
+directionally encouraging observation, not a validated result. The `flag_for_review` heuristic that
+leans on this signal would need a larger labelled set, a fixed judge count, and proper threshold
+tuning before it could be claimed as a reliable hallucination alarm.
 
-**Other limitations worth naming plainly:** two judges is the minimum configuration RAGeval
-supports, not necessarily the ceiling for consensus quality; HaluEval-QA is one dataset with its
-own generation biases (hallucinated answers are synthetically produced, which may make them easier
-or harder to catch than naturally occurring hallucinations); and these results reflect one point in
-time against specific judge-model versions, which will drift as providers update their models.
+**Other limitations worth naming plainly:** this run's judge count varies per example (2 when
+Gemini/GPT-4o-mini were unavailable, 3 for the 7 examples Gemini answered) rather than being fixed,
+which is a real limitation of *this specific run*, not of the consensus design itself; two judges
+is the minimum configuration RAGeval supports, not necessarily the ceiling for consensus quality;
+HaluEval-QA is one dataset with its own generation biases (hallucinated answers are synthetically
+produced, which may make them easier or harder to catch than naturally occurring hallucinations);
+and these results reflect one point in time against specific judge-model versions and provider
+quota states, which will drift.
 
 ## 2026 landscape
 
@@ -86,11 +98,12 @@ narrowly scoped to validating RAGeval's own consensus-vs-solo-judge design choic
 ## Scaling / reproducing
 
 `run_judge_benchmark.py` accepts `--n` (question count, default 25) and `--threshold` (decision
-threshold, default 0.6). N=25 (50 labelled examples, ~100 judge calls total across 2 judges) keeps
-a run cheap — roughly $0.10 in API costs at current Haiku/Llama pricing. Raising `--n` to a few
-hundred questions would tighten the confidence intervals on these metrics considerably and is the
-most direct way to turn this from a sanity check into a stronger result. Adding a third judge (for
-example an OpenAI mini-tier model, API key permitting) means setting a three-model `JUDGE_MODELS`
-list in config before rerunning — the script itself doesn't take a judges flag, it just reports
-whatever judges the configured `RAGEvaluator` actually calls — and would test whether consensus
-accuracy keeps improving as panel size grows, per the panel-of-judges literature referenced above.
+threshold, default 0.6); it reports whatever judges the configured `RAGEvaluator` actually calls
+— set `JUDGE_MODELS` before rerunning to control the panel. N=25 (50 labelled examples) keeps a
+run cheap — on the order of $0.10–0.30 in API costs at current Haiku/Groq/Gemini/mini-tier pricing,
+depending on how many of the configured judges actually respond. Raising `--n` to a few hundred
+questions, and ensuring all configured judges have working credentials and unexhausted quota for
+the full run (unlike the mixed-availability run reported above), would tighten the confidence
+intervals considerably and is the most direct way to turn this from a sanity check into a stronger,
+properly comparable result — that is a real cost/time tradeoff against a limited budget, not a
+technical limitation of the benchmark script itself.
