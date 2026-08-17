@@ -74,7 +74,7 @@ async def ask(query: str):
 ### LangChain
 
 ```python
-@track(model="groq/llama-3.3-70b-versatile")
+@track(model="groq/openai/gpt-oss-120b")
 def chain_invoke(query: str, context_chunks: list[str]):
     return chain.invoke({"query": query, "context": context_chunks})
 ```

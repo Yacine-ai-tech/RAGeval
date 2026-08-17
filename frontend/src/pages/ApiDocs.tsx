@@ -53,7 +53,7 @@ const ENDPOINTS: Endpoint[] = [
   ],
   "tokens_used": 180,
   "latency_ms": 1240,
-  "model": "groq/llama-3.3-70b-versatile",
+  "model": "groq/openai/gpt-oss-120b",
   "persona": "cfo"
 }`,
     response: `{
@@ -64,7 +64,7 @@ const ENDPOINTS: Endpoint[] = [
     "stdev": 0.05,
     "judges": [
       {"model": "anthropic/claude-haiku-4-5", "score": 0.85},
-      {"model": "groq/llama-3.3-70b-versatile", "score": 0.8},
+      {"model": "groq/openai/gpt-oss-120b", "score": 0.8},
       {"model": "gemini/gemini-flash-latest", "score": 0.84}
     ],
     "judges_used": 3,
@@ -74,7 +74,7 @@ const ENDPOINTS: Endpoint[] = [
   "cost_usd": 0.00031,
   "latency_ms": 1240.0,
   "tokens_used": 180,
-  "model": "groq/llama-3.3-70b-versatile",
+  "model": "groq/openai/gpt-oss-120b",
   "persona": "cfo",
   "persona_scope_violations": [],
   "overall_quality": 0.856,
@@ -97,7 +97,7 @@ const ENDPOINTS: Endpoint[] = [
   "chunks": ["Q2 gross margin came in at 41.2%..."],
   "tokens_used": 180,
   "latency_ms": 1240,
-  "model": "groq/llama-3.3-70b-versatile",
+  "model": "groq/openai/gpt-oss-120b",
   "persona": "cfo",
   "session_id": "my-app-001"
 }`,
@@ -109,7 +109,7 @@ const ENDPOINTS: Endpoint[] = [
   "cost_usd": 0.00031,
   "latency_ms": 1240.0,
   "tokens_used": 180,
-  "model": "groq/llama-3.3-70b-versatile",
+  "model": "groq/openai/gpt-oss-120b",
   "persona": "cfo",
   "persona_scope_violations": [],
   "overall_quality": 0.856,
@@ -149,7 +149,7 @@ const ENDPOINTS: Endpoint[] = [
     "query": "What was Q2 gross margin?",
     "answer": "Q2 gross margin was 41.2%...",
     "persona": "cfo",
-    "model": "groq/llama-3.3-70b-versatile",
+    "model": "groq/openai/gpt-oss-120b",
     "relevance": 0.87,
     "groundedness": 0.83,
     "faithfulness": 0.91,
@@ -170,7 +170,7 @@ const ENDPOINTS: Endpoint[] = [
     body: null,
     response: `{
   "daily_costs": {"2026-08-07": 0.012, "2026-08-08": 0.029},
-  "by_model": {"groq/llama-3.3-70b-versatile": 0.031, "anthropic/claude-sonnet-4-6": 0.01},
+  "by_model": {"groq/openai/gpt-oss-120b": 0.031, "anthropic/claude-sonnet-4-6": 0.01},
   "total_cost_usd": 0.041,
   "days": 30
 }`,
@@ -224,7 +224,7 @@ const ENDPOINTS: Endpoint[] = [
     response: `{
   "judge_models": [
     "anthropic/claude-haiku-4-5",
-    "groq/llama-3.3-70b-versatile",
+    "groq/openai/gpt-oss-120b",
     "gemini/gemini-flash-latest",
     "openai/gpt-4o-mini"
   ],

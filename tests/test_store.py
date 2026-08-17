@@ -21,7 +21,7 @@ def test_log_then_metrics_roundtrip(sqlite_store):
     scores = {
         "relevance": 0.7, "groundedness": 0.8, "faithfulness": 0.7,
         "overall_quality": 0.75, "cost_usd": 0.0012, "latency_ms": 120.0,
-        "tokens_used": 50, "model": "groq/llama-3.3-70b-versatile",
+        "tokens_used": 50, "model": "groq/openai/gpt-oss-120b",
         "flags": [], "needs_review": False,
     }
     asyncio.run(store.log_interaction("What is ARR?", "Annual Recurring Revenue.",
@@ -47,7 +47,7 @@ def test_metrics_avg_relevance_correct(sqlite_store):
     scores = {
         "relevance": 0.6, "groundedness": 0.5, "faithfulness": 0.55,
         "overall_quality": 0.55, "cost_usd": 0.001, "latency_ms": 100.0,
-        "tokens_used": 30, "model": "groq/llama-3.3-70b-versatile",
+        "tokens_used": 30, "model": "groq/openai/gpt-oss-120b",
         "flags": [], "needs_review": False,
     }
     asyncio.run(store.log_interaction("Test query", "Test answer", None, scores, None))
@@ -62,7 +62,7 @@ def test_query_volume_by_hour_is_populated(sqlite_store):
     scores = {
         "relevance": 0.7, "groundedness": 0.7, "faithfulness": 0.7,
         "overall_quality": 0.7, "cost_usd": 0.001, "latency_ms": 50.0,
-        "tokens_used": 20, "model": "groq/llama-3.3-70b-versatile",
+        "tokens_used": 20, "model": "groq/openai/gpt-oss-120b",
         "flags": [], "needs_review": False,
     }
     asyncio.run(store.log_interaction("hourly query", "answer", None, scores, None))
@@ -103,7 +103,7 @@ def test_get_metrics_flagged_count(sqlite_store):
     flagged_scores = {
         "relevance": 0.2, "groundedness": 0.3, "faithfulness": 0.2,
         "overall_quality": 0.25, "cost_usd": 0.002, "latency_ms": 6000.0,
-        "tokens_used": 100, "model": "groq/llama-3.3-70b-versatile",
+        "tokens_used": 100, "model": "groq/openai/gpt-oss-120b",
         "flags": ["LOW_RETRIEVAL_RELEVANCE", "HIGH_LATENCY"], "needs_review": True,
     }
     asyncio.run(store.log_interaction("bad query", "bad answer", None, flagged_scores, None))

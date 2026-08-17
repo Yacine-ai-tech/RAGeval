@@ -22,7 +22,7 @@ RAGEVAL_HOME.mkdir(parents=True, exist_ok=True)
 # Canonical default — must mirror _compat.py exactly.
 _DEFAULT_JUDGE_MODELS = (
     "anthropic/claude-haiku-4-5,"
-    "groq/llama-3.3-70b-versatile,"
+    "groq/openai/gpt-oss-120b,"
     "gemini/gemini-flash-latest,"
     "openai/gpt-4o-mini"
 )
@@ -51,7 +51,7 @@ class Settings:
     # override if you configure a different-dimension embedding model).
     RAGEVAL_EMBEDDING_DIM = int(os.getenv("RAGEVAL_EMBEDDING_DIM", "1024"))
 
-    LLM_DEFAULT = os.getenv("LLM_DEFAULT", "groq/llama-3.3-70b-versatile")
+    LLM_DEFAULT = os.getenv("LLM_DEFAULT", "groq/openai/gpt-oss-120b")
     LLM_JUDGE = os.getenv("LLM_JUDGE", "anthropic/claude-haiku-4-5")
 
     JUDGE_MODELS = [
