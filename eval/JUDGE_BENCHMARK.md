@@ -19,14 +19,18 @@ caveats section for exactly what it does and doesn't establish.
 - **Judges configured:** the project's current default four-judge `JUDGE_MODELS` (see
   `.env.example`) — Claude Haiku 4.5, Groq `gpt-oss-120b`, Gemini Flash, GPT-4o-mini.
   **What actually responded, reported exactly as it happened:** Claude Haiku 4.5 and Groq
-  `gpt-oss-120b` answered all 200 examples. Gemini Flash answered only 9 before hitting its
-  provider-side free-tier daily quota for that model (a real, externally-imposed limit, not a
-  code fault) and was unavailable for the rest. GPT-4o-mini had no API key configured in this
-  run's environment and answered 0. This is the actual production consensus behavior — RAGeval
-  never substitutes a different judge or fails the whole call when one is unavailable, it scores
-  from however many of the configured judges (minimum 2) actually respond per call. In practice
-  this run's consensus is effectively a Claude+Groq average for the large majority of examples,
-  with Gemini contributing a small amount of extra signal on the first few.
+  `gpt-oss-120b` answered all 200 examples. Gemini Flash was unreliable essentially from the
+  start of the run, not cleanly "working then cutting off" — provider-side `503` ("model
+  experiencing high demand") errors and occasional dropped connections appeared within the
+  first few examples, then `429` daily-quota exhaustion joined in and dominated for the rest.
+  Across the run (200 examples, one of which needed a retry), Gemini was called 201 times and
+  succeeded only **9 times** (192 failed calls, scattered mostly in the earlier portion of the
+  run, not a clean block). GPT-4o-mini had no API key
+  configured in this run's environment and answered 0. This is the actual production consensus
+  behavior — RAGeval never substitutes a different judge or fails the whole call when one is
+  unavailable, it scores from however many of the configured judges (minimum 2) actually respond
+  per call. In practice this run's consensus is a Claude+Groq average for the large majority of
+  examples, with Gemini contributing a small, scattered amount of extra signal on 9 of them.
 - **Decision threshold:** consensus score ≥ 0.6 → classified "grounded".
 - **Sample size:** N = 100 questions → **200 labelled examples** (balanced 100/100 grounded vs
   hallucinated by construction). Zero examples were skipped or failed.
