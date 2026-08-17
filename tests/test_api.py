@@ -3,6 +3,7 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -160,4 +161,71 @@ def test_no_api_v1_auth_bypass_in_routes():
         "These would be silently auth-bypassed if the /api/v1/auth/ middleware exemption "
         "is ever re-added."
     )
+
+
+# ─── /eval/retrieval-bench: precision@k / recall@k / MRR with ground truth ─────
+
+def test_retrieval_bench_without_ground_truth_returns_relevance_only():
+    """No relevant_chunks supplied: only the label-free embedding-relevance score is
+    returned, ranking metrics are omitted rather than silently zeroed."""
+    r = _client().post(
+        "/eval/retrieval-bench",
+        json={
+            "queries": ["What is ARR?"],
+            "chunks_a": [["Annual Recurring Revenue is a SaaS metric."]],
+            "chunks_b": [["The weather today is sunny."]],
+        },
+        headers=_internal_auth_headers(),
+    )
+    if r.status_code in (401, 403):
+        pytest.skip("no valid OMNIINTEL_INTERNAL_TOKEN in this environment")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["has_ground_truth"] is False
+    assert "mean_relevance" in body["strategy_a"]
+    assert "precision_at_k" not in body["strategy_a"]
+
+
+def test_retrieval_bench_with_ground_truth_returns_ranking_metrics():
+    """relevant_chunks supplied: precision@k/recall@k/MRR are computed per strategy and
+    the winner is decided by ranking quality (F1 of precision/recall), not embedding
+    similarity — strategy A retrieves the labeled-relevant chunk first, strategy B never
+    retrieves it at all, so A must win regardless of either chunk's topical similarity."""
+    r = _client().post(
+        "/eval/retrieval-bench",
+        json={
+            "queries": ["What is ARR?"],
+            "chunks_a": [["Annual Recurring Revenue is a SaaS metric.", "unrelated filler"]],
+            "chunks_b": [["completely unrelated chunk one", "completely unrelated chunk two"]],
+            "relevant_chunks": [["Annual Recurring Revenue is a SaaS metric."]],
+            "precision_k": 1,
+            "recall_k": 2,
+        },
+        headers=_internal_auth_headers(),
+    )
+    if r.status_code in (401, 403):
+        pytest.skip("no valid OMNIINTEL_INTERNAL_TOKEN in this environment")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["has_ground_truth"] is True
+    assert body["strategy_a"]["precision_at_k"] == pytest.approx(1.0)
+    assert body["strategy_a"]["mrr"] == pytest.approx(1.0)
+    assert body["strategy_b"]["precision_at_k"] == pytest.approx(0.0)
+    assert body["winner"] == "a"
+
+
+def test_retrieval_bench_relevant_chunks_length_mismatch_is_400():
+    r = _client().post(
+        "/eval/retrieval-bench",
+        json={
+            "queries": ["q1", "q2"],
+            "chunks_a": [["a"], ["a"]],
+            "chunks_b": [["b"], ["b"]],
+            "relevant_chunks": [["a"]],  # only 1 entry for 2 queries
+        },
+        headers=_internal_auth_headers(),
+    )
+    if r.status_code in (401, 403):
+        pytest.skip("no valid OMNIINTEL_INTERNAL_TOKEN in this environment")
+    assert r.status_code == 400
 

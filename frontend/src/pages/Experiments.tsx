@@ -19,6 +19,7 @@ function parseChunks(s: string): string[][] {
 const SAMPLE_Q = "What was Q3 revenue?\nWhich costs increased quarter over quarter?";
 const SAMPLE_A = "Q3 revenue was $487.6M, up 18.7% YoY; Gross margin 46.8%\nOperating costs $93.2M, +1.2% QoQ driven by cloud spend";
 const SAMPLE_B = "The weather in Q3 was mild; Office relocation completed\nHeadcount grew by 3%; New brand guidelines shipped";
+const SAMPLE_RELEVANT = "Q3 revenue was $487.6M, up 18.7% YoY\nOperating costs $93.2M, +1.2% QoQ driven by cloud spend";
 
 export default function Experiments() {
   return (
@@ -39,6 +40,10 @@ function RetrievalBench() {
   const [queries, setQueries] = useState(SAMPLE_Q);
   const [a, setA] = useState(SAMPLE_A);
   const [b, setB] = useState(SAMPLE_B);
+  const [relevant, setRelevant] = useState(SAMPLE_RELEVANT);
+  const [useGroundTruth, setUseGroundTruth] = useState(true);
+  const [precisionK, setPrecisionK] = useState(5);
+  const [recallK, setRecallK] = useState(10);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [res, setRes] = useState<Awaited<ReturnType<typeof api.retrievalBench>> | null>(null);
@@ -46,7 +51,8 @@ function RetrievalBench() {
   const run = async () => {
     setBusy(true); setErr(""); setRes(null);
     try {
-      setRes(await api.retrievalBench(parseLines(queries), parseChunks(a), parseChunks(b)));
+      const rel = useGroundTruth ? parseChunks(relevant) : undefined;
+      setRes(await api.retrievalBench(parseLines(queries), parseChunks(a), parseChunks(b), rel, precisionK, recallK));
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -68,13 +74,38 @@ function RetrievalBench() {
             <textarea value={b} onChange={(e) => setB(e.target.value)} rows={4} className="num w-full rounded-input border border-line-strong bg-surface-2 px-3 py-2 font-mono text-[12px] text-body outline-none focus:border-[var(--accent)]" />
           </div>
         </div>
+        <div>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-[12px] text-muted">
+              <input type="checkbox" checked={useGroundTruth} onChange={(e) => setUseGroundTruth(e.target.checked)} />
+              Score against ground truth (precision@k / recall@k / MRR)
+            </label>
+          </div>
+          {useGroundTruth && (
+            <div className="mt-2 space-y-2">
+              <div>
+                <Label>Relevant chunks (ground truth, one line per query — same chunk text as above)</Label>
+                <textarea value={relevant} onChange={(e) => setRelevant(e.target.value)} rows={2} className="num w-full rounded-input border border-line-strong bg-surface-2 px-3 py-2 font-mono text-[12px] text-body outline-none focus:border-[var(--accent)]" />
+              </div>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 text-[12px] text-muted">
+                  precision@
+                  <input type="number" min={1} value={precisionK} onChange={(e) => setPrecisionK(Number(e.target.value) || 1)} className="num w-16 rounded-input border border-line-strong bg-surface-2 px-2 py-1 text-[12px] text-body outline-none focus:border-[var(--accent)]" />
+                </label>
+                <label className="flex items-center gap-2 text-[12px] text-muted">
+                  recall@
+                  <input type="number" min={1} value={recallK} onChange={(e) => setRecallK(Number(e.target.value) || 1)} className="num w-16 rounded-input border border-line-strong bg-surface-2 px-2 py-1 text-[12px] text-body outline-none focus:border-[var(--accent)]" />
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
         <Button onClick={run} disabled={busy}><Beaker size={14} /> {busy ? "Benchmarking…" : "Run bench"}</Button>
         {err && <div className="flex items-start gap-2 text-[13px] text-bad"><AlertTriangle size={14} className="mt-0.5" />{err}</div>}
         {res && (
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-2 gap-3">
             {(["a", "b"] as const).map((k) => {
-              const mean = k === "a" ? res.strategy_a_mean : res.strategy_b_mean;
-              const per = k === "a" ? res.per_query_a : res.per_query_b;
+              const strategy = k === "a" ? res.strategy_a : res.strategy_b;
               const winner = res.winner === k;
               return (
                 <div key={k} className={`rounded-xl border p-4 ${winner ? "border-[var(--accent)]" : "border-line"} bg-surface-2`}>
@@ -82,8 +113,24 @@ function RetrievalBench() {
                     <span className="text-xs font-medium uppercase tracking-wide text-muted">Strategy {k.toUpperCase()}</span>
                     {winner && <Chip tone="accent"><Trophy size={11} /> winner</Chip>}
                   </div>
-                  <div className="num mt-1 text-2xl font-bold text-body">{mean.toFixed(3)}</div>
-                  <div className="num mt-1 text-[11px] text-muted">per-query: {per.map((p) => p.toFixed(2)).join(" · ")}</div>
+                  <div className="num mt-1 text-2xl font-bold text-body">{strategy.mean_relevance.toFixed(3)}</div>
+                  <div className="num mt-1 text-[11px] text-muted">mean relevance · per-query: {strategy.per_query_relevance.map((p) => p.toFixed(2)).join(" · ")}</div>
+                  {res.has_ground_truth && strategy.precision_at_k !== undefined && (
+                    <div className="num mt-2 grid grid-cols-3 gap-2 border-t border-line pt-2 text-center">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-muted">P@{res.precision_k}</div>
+                        <div className="text-sm font-semibold text-body">{strategy.precision_at_k.toFixed(2)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-muted">R@{res.recall_k}</div>
+                        <div className="text-sm font-semibold text-body">{strategy.recall_at_k?.toFixed(2)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-muted">MRR</div>
+                        <div className="text-sm font-semibold text-body">{strategy.mrr?.toFixed(2)}</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

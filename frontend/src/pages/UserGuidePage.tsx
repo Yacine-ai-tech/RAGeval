@@ -119,8 +119,12 @@ async def answer_question(query: str, context_chunks: list[str]) -> str:
           <p>
             Before committing to a retrieval approach, RAGeval can A/B it. <code className="text-green-300">POST /eval/retrieval-bench</code> takes
             the same set of queries retrieved through two different strategies (e.g. keyword vs
-            hybrid search, or two chunk sizes) and returns the mean retrieval-relevance score for each,
-            plus a winner.
+            hybrid search, or two chunk sizes) and always returns the mean embedding-relevance score
+            for each — no labels required. Pass an optional <code className="text-green-300">relevant_chunks</code> array
+            (the ground-truth relevant chunk text per query) to additionally get <code className="text-green-300">precision@k</code>,{' '}
+            <code className="text-green-300">recall@k</code>, and <code className="text-green-300">MRR</code> — standard
+            information-retrieval ranking metrics — for each strategy; when ground truth is supplied,
+            the winner is decided by ranking quality rather than embedding similarity.
           </p>
           <p>
             <code className="text-green-300">POST /eval/embedding-comparison</code> does the analogous
@@ -218,7 +222,7 @@ async def answer_question(query: str, context_chunks: list[str]) -> str:
 
         {/* PyPI / self-hosting */}
         <Section icon={Package} iconColor="text-indigo-400" title="Installation & Self-Hosting">
-          <Code>{`pip install omnismart-rageval   # version 0.1.22 — import name stays \`rageval\`
+          <Code>{`pip install omnismart-rageval   # version 0.1.23 — import name stays \`rageval\`
 
 rageval init                    # creates ~/.rageval/rageval.db
 rageval serve --port 8003       # requires the [server] extra (uvicorn)`}</Code>

@@ -36,7 +36,7 @@ const ENDPOINTS: Endpoint[] = [
     path: "/health",
     desc: "Liveness check. Not gated by the internal-token middleware — always reachable, used for uptime probes and the frontend's \"waking backend\" retry loop.",
     body: null,
-    response: `{"status": "ok", "service": "rageval", "version": "0.1.22"}`,
+    response: `{"status": "ok", "service": "rageval", "version": "0.1.23"}`,
   },
   // ── Scoring ─────────────────────────────────────────────────────────────
   {
@@ -244,18 +244,36 @@ const ENDPOINTS: Endpoint[] = [
     group: "Benchmarking",
     method: "POST",
     path: "/eval/retrieval-bench",
-    desc: "A/B compare two retrieval strategies on the same set of queries. chunks_a and chunks_b must each have one chunk-list per query (same length as queries, or a 400 length_mismatch is returned). Returns the mean retrieval-relevance score for each strategy and a winner.",
+    desc: "A/B compare two retrieval strategies on the same set of queries. chunks_a and chunks_b must each have one ranked chunk-list per query (same length as queries, or a 400 length_mismatch is returned). Always returns each strategy's mean embedding-relevance score (no labels needed). Optionally pass relevant_chunks — the ground-truth relevant chunk text per query — to also get precision@k, recall@k, and MRR (standard IR ranking metrics); when supplied, the winner is decided by ranking quality (precision/recall F1) rather than embedding similarity.",
     body: `{
   "queries": ["What is our refund policy?"],
   "chunks_a": [["Refunds are processed within 5 business days...", "Store credit is issued..."]],
-  "chunks_b": [["Our return policy allows 30 days...", "Refund requests go through support..."]]
+  "chunks_b": [["Our return policy allows 30 days...", "Refund requests go through support..."]],
+  "relevant_chunks": [["Refunds are processed within 5 business days..."]],
+  "precision_k": 5,
+  "recall_k": 10
 }`,
     response: `{
-  "strategy_a_mean": 0.71,
-  "strategy_b_mean": 0.84,
-  "winner": "b",
-  "per_query_a": [0.71],
-  "per_query_b": [0.84]
+  "strategy_a": {
+    "mean_relevance": 0.71,
+    "per_query_relevance": [0.71],
+    "precision_at_k": 0.2,
+    "recall_at_k": 1.0,
+    "mrr": 1.0,
+    "per_query_ranking": [{"precision_at_k": 0.2, "recall_at_k": 1.0, "reciprocal_rank": 1.0}]
+  },
+  "strategy_b": {
+    "mean_relevance": 0.84,
+    "per_query_relevance": [0.84],
+    "precision_at_k": 0.0,
+    "recall_at_k": 0.0,
+    "mrr": 0.0,
+    "per_query_ranking": [{"precision_at_k": 0.0, "recall_at_k": 0.0, "reciprocal_rank": 0.0}]
+  },
+  "winner": "a",
+  "has_ground_truth": true,
+  "precision_k": 5,
+  "recall_k": 10
 }`,
   },
   {
