@@ -30,7 +30,7 @@ async def test_rageval_score_interaction_mocked(monkeypatch):
         chunks=["Paris is the capital and most populous city of France."],
         tokens_used=10,
         latency_ms=100.0,
-        model="groq/llama-3.3-70b-versatile"
+        model="groq/openai/gpt-oss-120b"
     )
     
     assert res is not None

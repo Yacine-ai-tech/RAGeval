@@ -318,7 +318,7 @@ class LogRequest(BaseModel):
     contexts: List[str] = []   # accepted alias for `chunks`
     tokens_used: int = 0
     latency_ms: float = 0.0
-    model: str = "groq/llama-3.3-70b-versatile"
+    model: str = "groq/openai/gpt-oss-120b"
     persona: Optional[str] = None
     session_id: Optional[str] = None
 
@@ -330,7 +330,7 @@ class ScoreRequest(BaseModel):
     contexts: List[str] = []   # accepted alias for `chunks` (clients use either name)
     tokens_used: int = 0
     latency_ms: float = 0.0
-    model: str = "groq/llama-3.3-70b-versatile"
+    model: str = "groq/openai/gpt-oss-120b"
     persona: Optional[str] = None
 
 

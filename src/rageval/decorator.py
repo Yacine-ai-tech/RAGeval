@@ -85,7 +85,7 @@ async def _eval_and_log(
         logging.getLogger(__name__).warning("RAGeval background eval failed: %s", e)
 
 
-def track(model: str = "groq/llama-3.3-70b-versatile", persona: Optional[str] = None):
+def track(model: str = "groq/openai/gpt-oss-120b", persona: Optional[str] = None):
     """
     Decorator that auto-logs interactions to the RAGeval store.
 
@@ -99,7 +99,7 @@ def track(model: str = "groq/llama-3.3-70b-versatile", persona: Optional[str] = 
         def answer_question(query: str, context_chunks: list[str]) -> str:
             ...
 
-        @track(model="groq/llama-3.3-70b-versatile")
+        @track(model="groq/openai/gpt-oss-120b")
         async def answer_async(query: str, chunks: list[str]) -> str:
             ...
     """

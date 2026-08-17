@@ -51,7 +51,7 @@ def test_evaluator_instantiates():
 
 def test_cost_calculation():
     from rageval.evaluator import RAGEvaluator
-    cost = RAGEvaluator.calculate_cost(tokens=1000, model="groq/llama-3.3-70b-versatile")
+    cost = RAGEvaluator.calculate_cost(tokens=1000, model="groq/openai/gpt-oss-120b")
     assert cost >= 0
 
 
@@ -69,7 +69,7 @@ def test_app_creates():
 def test_decorator_wraps_function():
     from rageval.decorator import track
 
-    @track(model="groq/llama-3.3-70b-versatile")
+    @track(model="groq/openai/gpt-oss-120b")
     def fn(query: str):
         return "stub answer"
 
