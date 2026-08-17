@@ -56,8 +56,22 @@ def test_dspy_compile_callback_wraps_sync_fn_and_logs(sqlite_store):
     result = compile_program()
     assert result["winner"] == "v2"  # original return value is passed through
 
-    rows = store.get_query_log(limit=10)
-    assert any(r["query"] == "dspy_compile::planner_analyst_reporter" for r in rows)
+    # dspy_compile_callback logs via _fire_and_forget: from this sync/no-running-loop
+    # context it hands the coroutine to a background event-loop thread
+    # (asyncio.run_coroutine_threadsafe) and returns immediately, so the write can
+    # still be in flight the instant compile_program() returns. Poll briefly instead
+    # of asserting on the very next line.
+    import time
+    deadline = time.monotonic() + 2.0
+    rows: list = []
+    while time.monotonic() < deadline:
+        rows = store.get_query_log(limit=10)
+        if any(r["query"] == "dspy_compile::planner_analyst_reporter" for r in rows):
+            break
+        time.sleep(0.02)
+    assert any(r["query"] == "dspy_compile::planner_analyst_reporter" for r in rows), (
+        f"dspy_compile::planner_analyst_reporter not logged within 2s. Rows: {rows}"
+    )
 
 
 @pytest.mark.unit

@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rageval._compat import settings, get_logger  # self-contained (works when pip-installed)
+from rageval.otel_exporter import init_otel, export_span
 
 log = get_logger(__name__)
 
@@ -215,6 +216,17 @@ async def log_interaction(
         _write_interaction_sync,
         query, answer, persona, scores or {}, session_id,
     )
+
+    # OpenTelemetry export — no-op unless RAGEVAL_OTEL_ENDPOINT is configured.
+    if init_otel():
+        s = scores or {}
+        export_span("rag.interaction", {
+            "rag.query": query,
+            "rag.relevance": s.get("relevance"),
+            "rag.groundedness": s.get("groundedness"),
+            "rag.cost_usd": s.get("cost_usd"),
+            "rag.persona": persona,
+        })
 
 def _demo_session_scoping_enabled() -> bool:
     return os.environ.get("DEMO_SESSION_SCOPING", "true").lower() == "true"
