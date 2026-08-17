@@ -167,14 +167,14 @@ def test_remote_embed_mean_pools_per_token_hf_response(monkeypatch):
 
 def test_remote_embed_dispatches_generic_contract(monkeypatch):
     monkeypatch.setenv("INFERENCE_MODE", "remote")
-    monkeypatch.setenv("EMBEDDING_ENDPOINT", "https://orchestrator.example.com/api/inference")
+    monkeypatch.setenv("EMBEDDING_ENDPOINT", "https://custom-inference.example.com/api/inference")
     monkeypatch.setattr("httpx.Client", _FakeHttpxClient)
     _FakeHttpxClient.respond_with = {"embeddings": [[0.5, 0.6]]}
 
     ev = RAGEvaluator(embedding_model="BAAI/bge-m3")
     vecs = ev._remote_embed(["a"], model="BAAI/bge-m3")  # _embed() always passes model=
 
-    assert _FakeHttpxClient.last_url == "https://orchestrator.example.com/api/inference/embed"
+    assert _FakeHttpxClient.last_url == "https://custom-inference.example.com/api/inference/embed"
     assert _FakeHttpxClient.last_json == {"texts": ["a"], "model": "BAAI/bge-m3"}
     assert vecs.shape == (1, 2)
 
