@@ -1,6 +1,26 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.23] - 2026-08-17
+### Added
+- `/eval/retrieval-bench` now computes real information-retrieval ranking metrics —
+  `precision@k`, `recall@k`, and MRR — when an optional `relevant_chunks` array
+  (ground-truth relevant chunk text per query) is supplied, via a new
+  `RAGEvaluator.score_ranking()` static method. The existing label-free
+  embedding-relevance score is still always computed; when ground truth is supplied,
+  the reported `winner` is decided by ranking quality (precision/recall F1) instead of
+  embedding similarity, since that's the entire point of providing labels. The
+  Experiments page's Retrieval A/B bench UI has a matching ground-truth input and
+  results panel.
+- OpenTelemetry export is now actually wired up: `log_interaction()` calls
+  `init_otel()`/`export_span()` and exports an `rag.interaction` span (query,
+  relevance, groundedness, cost_usd, persona) whenever `RAGEVAL_OTEL_ENDPOINT` is
+  configured. Previously the exporter module existed but was never called from
+  anywhere, so the documented env var silently did nothing.
+### Fixed
+- `test_dspy_compile_callback_wraps_sync_fn_and_logs` was flaky: `dspy_compile_callback`
+  logs via a fire-and-forget helper that, called from a sync context with no running
+  event loop, hands the write to a background thread and returns immediately. The test
+  now polls briefly for the row to land instead of asserting on the very next line.
 ### Changed
 - Repository sanitization pass ahead of public release: removed internal-deployment
   ops scripts that shipped with a hardcoded service token and fabricated internal

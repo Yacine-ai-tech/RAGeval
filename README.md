@@ -6,7 +6,7 @@
 
 **Drop-in LLMOps observability for RAG pipelines. Self-hosted. SQLite-default. Persona-aware. Multi-judge consensus.**
 
-Version: **v0.1.22** | `pip install omnismart-rageval`
+Version: **v0.1.23** | `pip install omnismart-rageval`
 
 > 🔗 **Live demo:** https://rageval.ysiddo-ai-projects.app/ — browser dashboard (score a query + view metrics). Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
 > Self-hosting: see [SELF_HOSTING.md](SELF_HOSTING.md).
@@ -52,7 +52,7 @@ _As of 2026, based on each project's public documentation. Feature sets change f
 ## Quick Start
 
 ```bash
-pip install omnismart-rageval   # v0.1.22 — distribution name; CLI + import remain `rageval`
+pip install omnismart-rageval   # v0.1.23 — distribution name; CLI + import remain `rageval`
 rageval init                    # creates ~/.rageval/rageval.db
 rageval serve --port 8003
 ```

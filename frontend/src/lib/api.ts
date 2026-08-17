@@ -128,6 +128,24 @@ const post = (body: unknown) => ({
   body: JSON.stringify(body),
 });
 
+export type RankingMetrics = { precision_at_k: number; recall_at_k: number; reciprocal_rank: number };
+export type RetrievalStrategyResult = {
+  mean_relevance: number;
+  per_query_relevance: number[];
+  precision_at_k?: number;
+  recall_at_k?: number;
+  mrr?: number;
+  per_query_ranking?: RankingMetrics[];
+};
+export type RetrievalBenchResult = {
+  strategy_a: RetrievalStrategyResult;
+  strategy_b: RetrievalStrategyResult;
+  winner: "a" | "b";
+  has_ground_truth: boolean;
+  precision_k: number;
+  recall_k: number;
+};
+
 export type EvalEvent = { ts: string; kind: string; [k: string]: unknown };
 export type EvalConfig = {
   judge_models: string[];
@@ -149,10 +167,22 @@ export const api = {
   alerts: () => req<{ flagged_count: number; alerts: QueryRow[] }>("/eval/alerts"),
   score: (p: ScorePayload) => req<Scores>("/eval/score", post(p)),
   log: (p: ScorePayload & { session_id?: string }) => req<Scores>("/eval/log", post(p)),
-  retrievalBench: (queries: string[], a: string[][], b: string[][]) =>
-    req<{ strategy_a_mean: number; strategy_b_mean: number; winner: "a" | "b"; per_query_a: number[]; per_query_b: number[] }>(
+  retrievalBench: (
+    queries: string[],
+    a: string[][],
+    b: string[][],
+    relevantChunks?: string[][],
+    precisionK = 5,
+    recallK = 10,
+  ) =>
+    req<RetrievalBenchResult>(
       "/eval/retrieval-bench",
-      post({ queries, chunks_a: a, chunks_b: b }),
+      post({
+        queries,
+        chunks_a: a,
+        chunks_b: b,
+        ...(relevantChunks ? { relevant_chunks: relevantChunks, precision_k: precisionK, recall_k: recallK } : {}),
+      }),
     ),
   embeddingComparison: (queries: string[], chunks: string[][], models?: string[]) =>
     req<{ results: Record<string, number>; best: string | null }>(
