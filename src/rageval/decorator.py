@@ -35,6 +35,41 @@ _EVALUATOR = RAGEvaluator()
 _bg_loop: Optional[asyncio.AbstractEventLoop] = None
 _bg_loop_lock = threading.Lock()
 
+# Tracks in-flight background evaluations scheduled via the dedicated bg loop (the
+# script/CLI/__main__ path) so flush() below has something to wait on. A short-lived
+# script that calls a @track-decorated function and exits shortly after — an
+# explicitly documented supported use case — silently loses the evaluation: the bg
+# loop's thread is a daemon, so it's killed the instant the main thread finishes,
+# mid-flight, however far the real network calls to the judge APIs had gotten.
+# Confirmed live: a call needing ~20s of real LLM latency to score never reached the
+# DB when the calling script exited after 15s.
+#
+# An atexit hook that blocks on this looked like the fix, but doesn't actually work:
+# confirmed live, it does keep the process alive, yet the pending judge calls still
+# fail with "cannot schedule new futures after interpreter shutdown" — litellm's sync
+# HTTP calls run on asyncio's *default* executor via loop.run_in_executor(None, ...),
+# and concurrent.futures.thread's own process-wide shutdown hook (registered through
+# threading._register_atexit, not the public atexit module) tears that default
+# executor down on a schedule this module's own atexit callback can't reliably
+# out-order. Rather than ship a fix that adds up to 30s of hang on every short
+# script without actually guaranteeing delivery, script/CLI callers that need the
+# evaluation to land get an explicit, opt-in flush() instead.
+_pending_futures: "set[concurrent.futures.Future]" = set()
+_pending_lock = threading.Lock()
+
+
+def flush(timeout: float = 60.0) -> None:
+    """Block until all in-flight background evaluations (script/CLI path only —
+    see module docstring) finish or `timeout` elapses. Call this before your script
+    exits if you need the @track call(s) you just made to actually reach the store;
+    without it, a script that exits soon after calling a tracked function can lose
+    the evaluation, since it runs on a background daemon thread with no automatic
+    flush-on-exit (see module docstring for why one isn't just done for you)."""
+    with _pending_lock:
+        futures = list(_pending_futures)
+    if futures:
+        concurrent.futures.wait(futures, timeout=timeout)
+
 
 def _get_bg_loop() -> asyncio.AbstractEventLoop:
     global _bg_loop
@@ -55,8 +90,17 @@ def _fire_and_forget(coro) -> None:
         loop.create_task(coro)
     except RuntimeError:
         # No running loop (pure-sync context: CLI script, tests, __main__) —
-        # delegate to the dedicated background loop.
-        asyncio.run_coroutine_threadsafe(coro, _get_bg_loop())
+        # delegate to the dedicated background loop, and track the future so
+        # atexit can wait for it instead of the process silently dropping it.
+        fut = asyncio.run_coroutine_threadsafe(coro, _get_bg_loop())
+        with _pending_lock:
+            _pending_futures.add(fut)
+
+        def _forget(f: "concurrent.futures.Future") -> None:
+            with _pending_lock:
+                _pending_futures.discard(f)
+
+        fut.add_done_callback(_forget)
 
 
 async def _eval_and_log(
@@ -102,6 +146,12 @@ def track(model: str = "groq/openai/gpt-oss-120b", persona: Optional[str] = None
         @track(model="groq/openai/gpt-oss-120b")
         async def answer_async(query: str, chunks: list[str]) -> str:
             ...
+
+    In a script/CLI/notebook context (no running event loop), the evaluation runs
+    on a background thread and the process can exit before it lands — call
+    ``rageval.flush()`` before your script ends if you need it to. A long-running
+    server (FastAPI, Starlette, ...) doesn't need this: there's always a live event
+    loop for the eval to run inline on the next iteration.
     """
     def decorator(fn: Callable) -> Callable:
         if asyncio.iscoroutinefunction(fn):
