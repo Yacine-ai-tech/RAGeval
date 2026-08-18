@@ -61,6 +61,7 @@ OPENAI_PRICES = {
     # gpt-4o-mini is the default configured judge model.
     # gpt-5/gpt-5-mini kept for forward-compat when the key is available.
     "openai/gpt-4o-mini": (0.15, 0.60),
+    "openai/gpt-4o": (2.50, 10.00),
     "openai/gpt-5": (5.00, 15.00),
     "openai/gpt-5-mini": (0.15, 0.60),
 }
@@ -365,11 +366,29 @@ class RAGEvaluator:
 
     @staticmethod
     def calculate_cost(tokens: int, model: str, input_ratio: float = 0.7) -> float:
-        """Estimate USD cost from total tokens (split per input_ratio)."""
+        """Estimate USD cost from total tokens (split per input_ratio).
+
+        `model` here is caller-supplied (LogRequest/ScoreRequest.model describes whatever
+        pipeline produced the answer being scored, not one of the fixed JUDGE_MODELS), so it
+        isn't guaranteed to arrive in this table's "provider/model" form — a caller reasonably
+        passes the bare name their own SDK uses, e.g. "gpt-4o" instead of "openai/gpt-4o". Every
+        real query was landing here as a silent $0.0000, indistinguishable from a genuinely free
+        call, because of this exact-match requirement. Try the bare name under each known
+        provider prefix, and the reverse (strip a prefix the caller did include), before giving
+        up and reporting $0.
+        """
         prices = {**GROQ_PRICES, **ANTHROPIC_PRICES, **OPENAI_PRICES}
-        if model not in prices:
+        resolved = prices.get(model)
+        if resolved is None and "/" not in model:
+            for prefix in ("openai/", "anthropic/", "groq/"):
+                resolved = prices.get(prefix + model)
+                if resolved is not None:
+                    break
+        if resolved is None and "/" in model:
+            resolved = prices.get(model.rsplit("/", 1)[-1])
+        if resolved is None:
             return 0.0
-        in_price, out_price = prices[model]
+        in_price, out_price = resolved
         input_toks = tokens * input_ratio
         output_toks = tokens * (1 - input_ratio)
         return (input_toks * in_price + output_toks * out_price) / 1_000_000

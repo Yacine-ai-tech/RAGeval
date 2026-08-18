@@ -47,7 +47,7 @@ async def main():
     ap.add_argument("--threshold", type=float, default=0.6)
     a = ap.parse_args()
 
-    from rageval.evaluator import RAGEvaluator
+    from rageval.evaluator import RAGEvaluator, InsufficientJudgesError
     from sklearn.metrics import (accuracy_score, f1_score, precision_score,
                                  recall_score, roc_auc_score)
 
@@ -58,14 +58,28 @@ async def main():
 
     consensus, labels, stdevs = [], [], []
     per_judge: dict = {}
+    skipped = 0
     e = RAGEvaluator()
     for i, (ctx, ans, label) in enumerate(data):
-        r = await e.score_groundedness_consensus(ans, ctx)
+        # A transient rate-limit on one provider dropping the *live* judge count below
+        # MIN_JUDGES_REQUIRED for a single example used to abort the whole run and lose
+        # every example already scored — skip just that example instead. A small delay
+        # keeps Groq's free-tier 30 req/min cap from tripping every run in the first place.
+        try:
+            r = await e.score_groundedness_consensus(ans, ctx)
+        except InsufficientJudgesError as exc:
+            skipped += 1
+            print(f"  [{i+1}/{len(data)}] skipped: {exc}")
+            await asyncio.sleep(2.0)
+            continue
         consensus.append(r["consensus"]); labels.append(label); stdevs.append(r["stdev"])
         for j in r["judges"]:
             per_judge.setdefault(j["model"], []).append((j["score"], label))
         if (i + 1) % 10 == 0:
             print(f"  scored {i+1}/{len(data)}")
+        await asyncio.sleep(2.0)
+    if skipped:
+        print(f"\n  ({skipped}/{len(data)} examples skipped — insufficient judges responded)")
 
     preds = [1 if c >= a.threshold else 0 for c in consensus]
     print("\n=== RESULTS (consensus) ===")
@@ -77,10 +91,16 @@ async def main():
         print(f"  ROC-AUC  : {roc_auc_score(labels, consensus):.3f}  (consensus separates grounded/hallucinated)")
     except ValueError:
         print("  ROC-AUC  : n/a")
-    print("\n=== per-judge accuracy (@thr) ===")
+    print("\n=== per-judge metrics (@thr) ===")
     for m, pairs in per_judge.items():
-        acc = sum(1 for s, l in pairs if (s >= a.threshold) == bool(l)) / len(pairs)
-        print(f"  {m:40} {acc:.3f}")
+        j_scores = [s for s, l in pairs]
+        j_labels = [l for s, l in pairs]
+        j_preds = [1 if s >= a.threshold else 0 for s in j_scores]
+        acc = accuracy_score(j_labels, j_preds)
+        prec = precision_score(j_labels, j_preds, zero_division=0)
+        rec = recall_score(j_labels, j_preds, zero_division=0)
+        f1 = f1_score(j_labels, j_preds, zero_division=0)
+        print(f"  {m:40} n={len(pairs):<5} acc={acc:.3f} precision={prec:.3f} recall={rec:.3f} F1={f1:.3f}")
     # disagreement → error: mean stdev on wrong vs correct consensus predictions
     wrong = [sd for sd, p, l in zip(stdevs, preds, labels) if p != l]
     right = [sd for sd, p, l in zip(stdevs, preds, labels) if p == l]
