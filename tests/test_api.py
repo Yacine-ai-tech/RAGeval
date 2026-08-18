@@ -21,8 +21,8 @@ def _internal_auth_headers() -> dict:
     itself needs to be reachable with no token). Reuse whatever real token is
     configured in the environment so tests exercise the actual endpoint, not just the
     pass-through/403 behavior of the gate."""
-    token = os.environ.get("OMNIINTEL_INTERNAL_TOKEN", "")
-    return {"X-OmniIntel-Internal-Token": token} if token else {}
+    token = os.environ.get("RAGEVAL_INTERNAL_TOKEN", "")
+    return {"X-RAGeval-Internal-Token": token} if token else {}
 
 
 def test_health():
@@ -85,7 +85,7 @@ def test_eval_score_returns_503_when_insufficient_judges(monkeypatch):
     )
     if r.status_code in (401, 403):
         import pytest
-        pytest.skip("no valid OMNIINTEL_INTERNAL_TOKEN in this environment")
+        pytest.skip("no valid RAGEVAL_INTERNAL_TOKEN in this environment")
     assert r.status_code == 503, f"Expected 503, got {r.status_code}: {r.text[:200]}"
     assert "judge" in r.json()["detail"].lower()
 
@@ -103,7 +103,7 @@ def test_get_eval_routes_accessible_without_internal_token(monkeypatch):
     """
     import pytest
     monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "true")
-    monkeypatch.setenv("OMNIINTEL_INTERNAL_TOKEN", "secret-sentinel-value")
+    monkeypatch.setenv("RAGEVAL_INTERNAL_TOKEN", "secret-sentinel-value")
     # Reload api so the middleware picks up the new env values.
     import importlib
     import api as api_mod
@@ -119,7 +119,7 @@ def test_get_eval_routes_accessible_without_internal_token(monkeypatch):
         "/eval/cost-report?days=7",
     ]
     for route in get_routes:
-        r = client.get(route)  # No X-OmniIntel-Internal-Token header.
+        r = client.get(route)  # No X-RAGeval-Internal-Token header.
         assert r.status_code != 403, (
             f"{route} returned 403 to a browser GET with no token. "
             "Dashboard will show empty data in production."
@@ -130,7 +130,7 @@ def test_post_eval_blocked_without_internal_token(monkeypatch):
     """POST /eval/score and POST /eval/log must still require the token
     when REQUIRE_INTERNAL_TOKEN=true — only GETs are open to the browser."""
     monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "true")
-    monkeypatch.setenv("OMNIINTEL_INTERNAL_TOKEN", "secret-sentinel-value")
+    monkeypatch.setenv("RAGEVAL_INTERNAL_TOKEN", "secret-sentinel-value")
     import importlib
     import api as api_mod
     importlib.reload(api_mod)
@@ -139,7 +139,7 @@ def test_post_eval_blocked_without_internal_token(monkeypatch):
     r = client.post(
         "/eval/score",
         json={"query": "q", "answer": "a", "chunks": ["c"]},
-        # Deliberately no X-OmniIntel-Internal-Token header.
+        # Deliberately no X-RAGeval-Internal-Token header.
     )
     assert r.status_code == 403, (
         "POST /eval/score should be blocked by token gate when REQUIRE_INTERNAL_TOKEN=true. "
@@ -178,7 +178,7 @@ def test_retrieval_bench_without_ground_truth_returns_relevance_only():
         headers=_internal_auth_headers(),
     )
     if r.status_code in (401, 403):
-        pytest.skip("no valid OMNIINTEL_INTERNAL_TOKEN in this environment")
+        pytest.skip("no valid RAGEVAL_INTERNAL_TOKEN in this environment")
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["has_ground_truth"] is False
@@ -204,7 +204,7 @@ def test_retrieval_bench_with_ground_truth_returns_ranking_metrics():
         headers=_internal_auth_headers(),
     )
     if r.status_code in (401, 403):
-        pytest.skip("no valid OMNIINTEL_INTERNAL_TOKEN in this environment")
+        pytest.skip("no valid RAGEVAL_INTERNAL_TOKEN in this environment")
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["has_ground_truth"] is True
@@ -226,6 +226,6 @@ def test_retrieval_bench_relevant_chunks_length_mismatch_is_400():
         headers=_internal_auth_headers(),
     )
     if r.status_code in (401, 403):
-        pytest.skip("no valid OMNIINTEL_INTERNAL_TOKEN in this environment")
+        pytest.skip("no valid RAGEVAL_INTERNAL_TOKEN in this environment")
     assert r.status_code == 400
 
