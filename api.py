@@ -40,7 +40,7 @@ from datetime import datetime as _dt
 from typing import Any, Dict, List, Optional
 
 import requests
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -237,19 +237,30 @@ evaluator = RAGEvaluator()
 
 _EVENTS: "_deque[Dict[str, Any]]" = _deque(maxlen=200)
 
+# events/detail (query text, persona) are real visitor content, same as rageval_log —
+# events carry a session_id (None for global/service-to-service callers, same
+# "no session, no restriction" default used throughout this file) and both the GET
+# poll and the WS push below filter on it before a caller ever sees another
+# visitor's query text.
+#
 # _WS_CLIENTS is accessed from async handlers only (the route coroutines all run
 # on the same uvicorn event loop thread), so asyncio.Lock() is the correct
 # synchronisation primitive here — no threading.Lock() needed. _emit() schedules
 # the broadcast as a coroutine on the running loop rather than calling
 # ws.send_json directly, so all mutations of _WS_CLIENTS happen inside async
 # handlers only, even when _emit() itself is called from a sync code path.
-_WS_CLIENTS: set = set()
+_WS_CLIENTS: Dict[Any, Optional[str]] = {}  # websocket -> that connection's session_id
 _ws_lock = asyncio.Lock()
 
 
-def _emit(kind: str, **detail: Any) -> None:
+def _event_visible(event: Dict[str, Any], session_id: Optional[str]) -> bool:
+    ev_session = event.get("session_id")
+    return ev_session is None or ev_session == session_id
+
+
+def _emit(kind: str, session_id: Optional[str] = None, **detail: Any) -> None:
     from datetime import timezone
-    event = {"ts": _dt.now(timezone.utc).isoformat(), "kind": kind, **detail}
+    event = {"ts": _dt.now(timezone.utc).isoformat(), "kind": kind, "session_id": session_id, **detail}
     _EVENTS.appendleft(event)
     # Schedule broadcast without touching _WS_CLIENTS from a potentially
     # non-event-loop context — the async _broadcast() coroutine owns the lock.
@@ -261,32 +272,37 @@ def _emit(kind: str, **detail: Any) -> None:
 
 
 async def _broadcast(event: Dict[str, Any]) -> None:
-    """Send event to all connected WebSocket clients (async, lock-protected)."""
+    """Send event to connected WebSocket clients allowed to see it (async, lock-protected)."""
     async with _ws_lock:
-        disconnected = set()
-        for ws in list(_WS_CLIENTS):  # iterate a snapshot — safe even if lock broken
+        disconnected = []
+        for ws, ws_session_id in list(_WS_CLIENTS.items()):  # snapshot — safe even if lock broken
+            if not _event_visible(event, ws_session_id):
+                continue
             try:
                 await ws.send_json(event)
             except Exception:
-                disconnected.add(ws)
-        _WS_CLIENTS.difference_update(disconnected)
+                disconnected.append(ws)
+        for ws in disconnected:
+            _WS_CLIENTS.pop(ws, None)
 
 
 @app.websocket("/eval/live")
 async def eval_live_ws(websocket: WebSocket):
+    session_id = websocket.headers.get("x-demo-session-id")
     await websocket.accept()
     async with _ws_lock:
-        _WS_CLIENTS.add(websocket)
+        _WS_CLIENTS[websocket] = session_id
     try:
         for event in list(_EVENTS):
-            await websocket.send_json(event)
+            if _event_visible(event, session_id):
+                await websocket.send_json(event)
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         pass
     finally:
         async with _ws_lock:
-            _WS_CLIENTS.discard(websocket)
+            _WS_CLIENTS.pop(websocket, None)
 
 
 # ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -372,7 +388,8 @@ async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
     # Rate-limit write endpoints that trigger LLM judge calls.
     if _RATE_LIMIT_ENABLED and _limiter:
         await _limiter._check_request_limit(request, eval_log, "60/minute")  # type: ignore[arg-type]
-    _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona)
+    session_id = _resolve_session_id(request, req.session_id)
+    _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona, session_id=session_id)
     try:
         scores = await evaluator.score_interaction(
             query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
@@ -381,11 +398,10 @@ async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
         )
     except InsufficientJudgesError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    session_id = _resolve_session_id(request, req.session_id)
     await log_interaction(req.query, req.answer, req.persona, scores, session_id)
     c = scores.get("groundedness_consensus", {})
     _emit("interaction.scored", route="/eval/log", overall=scores.get("overall_quality"),
-          judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=True)
+          judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=True, session_id=session_id)
     return scores
 
 
@@ -394,7 +410,8 @@ async def eval_score(req: ScoreRequest, request: Request) -> Dict[str, Any]:
     # Rate-limit score endpoint — each call triggers multiple LLM judge calls.
     if _RATE_LIMIT_ENABLED and _limiter:
         await _limiter._check_request_limit(request, eval_score, "60/minute")  # type: ignore[arg-type]
-    _emit("interaction.received", route="/eval/score", query=req.query[:120], persona=req.persona)
+    session_id = _resolve_session_id(request, None)
+    _emit("interaction.received", route="/eval/score", query=req.query[:120], persona=req.persona, session_id=session_id)
     try:
         scores = await evaluator.score_interaction(
             query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
@@ -405,14 +422,19 @@ async def eval_score(req: ScoreRequest, request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(e))
     c = scores.get("groundedness_consensus", {})
     _emit("interaction.scored", route="/eval/score", overall=scores.get("overall_quality"),
-          judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=False)
+          judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=False, session_id=session_id)
     return scores
 
 
 @app.get("/eval/events")
-async def eval_events(limit: int = 100) -> Dict[str, Any]:
-    """Live telemetry: the most recent evaluation-pipeline events (in-memory ring)."""
-    return {"events": list(_EVENTS)[:limit], "capacity": _EVENTS.maxlen}
+async def eval_events(
+    limit: int = 100,
+    x_demo_session_id: Optional[str] = Header(default=None, alias="X-Demo-Session-Id"),
+) -> Dict[str, Any]:
+    """Live telemetry: the most recent evaluation-pipeline events (in-memory ring).
+    Scoped like everything else here — see _event_visible."""
+    visible = [e for e in _EVENTS if _event_visible(e, x_demo_session_id)]
+    return {"events": visible[:limit], "capacity": _EVENTS.maxlen}
 
 
 @app.get("/eval/config")
