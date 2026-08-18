@@ -339,7 +339,7 @@ export default function ApiDocs() {
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,margin:"20px 0" }}>
         {[
           { icon: Globe, label:"Base URL", value:BASE_URL, color:"#38bdf8" },
-          { icon: Shield, label:"Auth", value:"X-OmniIntel-Internal-Token (opt-in)", color:"#4ade80" },
+          { icon: Shield, label:"Auth", value:"X-RAGeval-Internal-Token (opt-in)", color:"#4ade80" },
           { icon: Zap, label:"Format", value:"REST / JSON", color:"#f59e0b" },
           { icon: BookOpen, label:"Latency", value:"<2s avg", color:"#a78bfa" },
         ].map(({icon:Icon,label,value,color}) => (

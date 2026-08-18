@@ -201,13 +201,13 @@ async def verify_internal_token(request: Request, call_next):
         return await call_next(request)
 
     # POST/write routes: enforce token when REQUIRE_INTERNAL_TOKEN=true.
-    token = request.headers.get("X-OmniIntel-Internal-Token")
-    expected = os.environ.get("OMNIINTEL_INTERNAL_TOKEN", "")
+    token = request.headers.get("X-RAGeval-Internal-Token")
+    expected = os.environ.get("RAGEVAL_INTERNAL_TOKEN", "")
     if os.environ.get("REQUIRE_INTERNAL_TOKEN", "false").lower() == "true":
         if not expected or token != expected:
             return JSONResponse(
                 status_code=403,
-                content={"detail": "Missing or invalid X-OmniIntel-Internal-Token"},
+                content={"detail": "Missing or invalid X-RAGeval-Internal-Token"},
             )
 
     return await call_next(request)
