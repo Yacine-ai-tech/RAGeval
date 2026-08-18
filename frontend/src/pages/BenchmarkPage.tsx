@@ -13,11 +13,11 @@ interface TableRow {
 }
 
 const RESULTS: TableRow[] = [
-  { metric: 'Accuracy',                    consensus: '0.800 ★', claude: '0.780', groq: '0.767' },
-  { metric: 'Precision',                   consensus: '0.826',   claude: '—',     groq: '—'     },
-  { metric: 'Recall',                      consensus: '0.760',   claude: '—',     groq: '—'     },
-  { metric: 'F1',                          consensus: '0.792 ★', claude: '—',     groq: '—'     },
-  { metric: 'ROC-AUC (raw consensus score)', consensus: '0.880 ★', claude: '—',  groq: '—'     },
+  { metric: 'Accuracy',                    consensus: '0.800',   claude: '0.740', groq: '0.860 ★' },
+  { metric: 'Precision',                   consensus: '0.812',   claude: '0.740', groq: '0.833'   },
+  { metric: 'Recall',                      consensus: '0.780',   claude: '0.740', groq: '0.900 ★' },
+  { metric: 'F1',                          consensus: '0.796',   claude: '0.740', groq: '0.865 ★' },
+  { metric: 'ROC-AUC (raw consensus score)', consensus: '0.896 ★', claude: '—',  groq: '—'       },
 ];
 
 export default function BenchmarkPage() {
@@ -40,20 +40,27 @@ export default function BenchmarkPage() {
               <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">hallucinated_answer</code> (grounded=0).
             </li>
             <li>
-              <span className="font-medium text-body">Judges:</span> Claude Haiku 4.5 + Groq Llama-3.3-70B (the configured{' '}
-              <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">JUDGE_MODELS</code>).
+              <span className="font-medium text-body">Judges configured:</span> the project's current default four-judge{' '}
+              <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">JUDGE_MODELS</code> — Claude Haiku 4.5, Groq{' '}
+              <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">gpt-oss-120b</code>, Gemini Flash, GPT-4o-mini.{' '}
+              <span className="font-medium text-body">What actually responded:</span> Claude Haiku 4.5 and Groq{' '}
+              <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">gpt-oss-120b</code> answered all 100 examples.
+              Gemini's free-tier daily quota (20 requests/day) was already exhausted before this run started; GPT-4o-mini
+              has no API key configured in this environment. RAGeval never substitutes a different judge or fails the whole
+              call when one is unavailable — it scores from however many of the configured judges (minimum 2) actually
+              respond. This run's consensus is a Claude+Groq average throughout.
             </li>
             <li>
               <span className="font-medium text-body">Decision threshold:</span> consensus ≥ 0.6 → &ldquo;grounded&rdquo;.
             </li>
             <li>
               <span className="font-medium text-body">N:</span>{' '}
-              <span className="num">25</span> questions → <span className="num font-semibold">50</span> labelled examples (balanced).
+              <span className="num">50</span> questions → <span className="num font-semibold">100</span> labelled examples (balanced).
             </li>
             <li>
               <span className="font-medium text-body">Reproduce:</span>{' '}
               <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">
-                python eval/run_judge_benchmark.py --n 25
+                python eval/run_judge_benchmark.py --n 50
               </code>{' '}
               (needs <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">ANTHROPIC_API_KEY</code> /{' '}
               <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">GROQ_API_KEY</code>,{' '}
@@ -72,7 +79,7 @@ export default function BenchmarkPage() {
                   <th className="pb-2 pr-6">Metric</th>
                   <th className="pb-2 pr-6 text-right">Consensus</th>
                   <th className="pb-2 pr-6 text-right">Claude Haiku (solo)</th>
-                  <th className="pb-2 text-right">Groq Llama (solo)</th>
+                  <th className="pb-2 text-right">Groq gpt-oss-120b (solo)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border)]">
@@ -90,15 +97,20 @@ export default function BenchmarkPage() {
 
           <div className="mt-4 rounded-xl border border-line bg-surface-2 p-4 text-[13px] leading-6 text-dim">
             <p>
-              <span className="font-semibold text-body">Headline:</span> multi-judge consensus (0.80) beats every individual judge
-              (0.78 / 0.767) — the core thesis, measured on a standard dataset. ROC-AUC 0.880 shows the raw consensus
-              score cleanly separates grounded from hallucinated answers.
+              <span className="font-semibold text-body">Headline:</span> at N=100, Groq <code className="rounded bg-surface px-1 py-0.5 text-xs">gpt-oss-120b</code> solo
+              (0.860 accuracy / 0.865 F1) outperformed the multi-judge consensus (0.800 / 0.796), which in turn beat Claude
+              Haiku 4.5 solo (0.740 across the board). Consensus is an unweighted mean across whichever judges respond, and
+              Claude was the meaningfully weaker judge here — averaging it in pulls the consensus below Groq's solo score.
+              ROC-AUC 0.896 still shows the raw consensus score separates grounded from hallucinated answers well; it's
+              specifically the threshold accuracy/F1 that a single strong judge beats at this sample size.
             </p>
             <p className="mt-2">
               <span className="font-semibold text-body">Honest caveat:</span> judge-disagreement (stdev) as an error predictor
-              was only marginal here (0.173 on wrong predictions vs 0.170 on correct) — directionally right but not a strong
-              signal at N=50; the <code className="rounded bg-surface px-1 py-0.5 text-xs">flag_for_review</code> heuristic
-              needs a larger labelled set + threshold tuning before it can be claimed as a reliable hallucination alarm.
+              was a real signal here — 0.332 mean stdev on wrong predictions vs 0.074 on correct ones — but this remains a
+              2-judge result (Gemini and GPT-4o-mini contributed nothing this run), not a true test of the full 4-judge
+              panel, and unweighted averaging losing to the best single judge is itself evidence the aggregation method,
+              not just the judge count, needs work before <code className="rounded bg-surface px-1 py-0.5 text-xs">flag_for_review</code> can
+              be called a reliable hallucination alarm.
             </p>
           </div>
         </Card>
@@ -106,9 +118,10 @@ export default function BenchmarkPage() {
         {/* Scaling */}
         <Card title="Scaling">
           <p className="text-sm text-dim leading-6">
-            N=25 keeps the run cheap (~100 judge calls, ~$0.10). Raising{' '}
-            <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">--n</code> to a few hundred gives tighter CIs;
-            adding a 3rd judge (e.g. GPT-4o-mini, key permitting) tests whether consensus keeps improving.
+            N=50 keeps the run cheap (~200 judge calls, well under $1 — Claude Haiku and Groq gpt-oss-120b are both
+            inexpensive per-token). Raising <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">--n</code> to a few
+            hundred gives tighter confidence intervals; getting GPT-4o-mini and a non-quota-exhausted Gemini into the same
+            run would test the full configured 4-judge panel instead of the 2 judges that actually responded here.
           </p>
         </Card>
       </div>
