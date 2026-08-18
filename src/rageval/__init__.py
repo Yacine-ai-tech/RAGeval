@@ -3,6 +3,7 @@
 Public API (lazily imported so ``import rageval`` stays light and config/env
 overrides are honoured at first use):
     track                 decorator that auto-logs any RAG function call
+    flush                 block until in-flight @track calls land (script/CLI use — see decorator.py)
     RAGEvaluator          relevance / groundedness / faithfulness / cost scorers
     init_rageval_table    initialise the (SQLite-default) store
     log_interaction       persist a scored interaction
@@ -23,6 +24,7 @@ except Exception:  # pragma: no cover
 __all__ = [
     "__version__",
     "track",
+    "flush",
     "RAGEvaluator",
     "init_rageval_table",
     "log_interaction",
@@ -38,6 +40,10 @@ def __getattr__(name: str):
         from rageval.decorator import track
 
         return track
+    if name == "flush":
+        from rageval.decorator import flush
+
+        return flush
     if name == "RAGEvaluator":
         from rageval.evaluator import RAGEvaluator
 
