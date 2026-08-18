@@ -13,8 +13,8 @@ import os
 import httpx
 import pytest
 
-TOKEN = os.getenv('OMNIINTEL_INTERNAL_TOKEN', '')
-HEADERS = {'X-OmniIntel-Internal-Token': TOKEN}
+TOKEN = os.getenv('RAGEVAL_INTERNAL_TOKEN', '')
+HEADERS = {'X-RAGeval-Internal-Token': TOKEN}
 TEST_BASE_URL = os.getenv('TEST_BASE_URL', '').strip()
 
 

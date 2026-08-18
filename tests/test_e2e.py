@@ -5,7 +5,7 @@ from api import app
 import os
 
 client = TestClient(app)
-HEADERS = {"X-OmniIntel-Internal-Token": os.getenv("OMNIINTEL_INTERNAL_TOKEN", "")}
+HEADERS = {"X-RAGeval-Internal-Token": os.getenv("RAGEVAL_INTERNAL_TOKEN", "")}
 
 @pytest.mark.asyncio
 async def test_e2e_rageval_score():
