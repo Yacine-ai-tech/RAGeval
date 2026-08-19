@@ -255,23 +255,68 @@ class RAGEvaluator:
             try:
                 from google import genai
                 from google.genai import types
-
-                client = genai.Client(http_options={"api_version": "v1beta"})
-                actual_model = model.split("gemini/", 1)[-1]
-
-                resp = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.models.generate_content,
-                        model=actual_model,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(temperature=0.0)
-                    ),
-                    timeout=judge_timeout,
-                )
-                content = (resp.text or "").strip()
             except ImportError:
                 log.warning("google-genai not installed, skipping gemini judge")
                 return None
+
+            client = genai.Client(http_options={"api_version": "v1beta"})
+            actual_model = model.split("gemini/", 1)[-1]
+
+            async def _call(use_thinking: bool):
+                # thinking_budget=0 disables Gemini's internal "thinking" pass.
+                # Without it, some Gemini models (flash variants especially) spend
+                # part/all of their output token budget on invisible thinking tokens
+                # and return empty text — confirmed live via usage_metadata:
+                # thoughts_token_count=191 vs candidates_token_count=2 on a plain
+                # groundedness prompt against gemini-flash-latest. This judge only
+                # ever needs a single float, so there's no real reasoning task here
+                # for "thinking" to help with anyway.
+                cfg_kwargs: Dict[str, Any] = {"temperature": 0.0}
+                if use_thinking:
+                    cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                # One retry for transient 503 UNAVAILABLE — confirmed live against
+                # gemini-flash-latest during Google-side overload; not specific to
+                # any one model, just Google's servers being momentarily saturated.
+                last_err: Optional[Exception] = None
+                for attempt in range(2):
+                    try:
+                        return await asyncio.wait_for(
+                            asyncio.to_thread(
+                                client.models.generate_content,
+                                model=actual_model,
+                                contents=prompt,
+                                config=types.GenerateContentConfig(**cfg_kwargs),
+                            ),
+                            timeout=judge_timeout,
+                        )
+                    except Exception as e:
+                        last_err = e
+                        if attempt == 0 and ("UNAVAILABLE" in str(e) or "503" in str(e)):
+                            await asyncio.sleep(1.5)
+                            continue
+                        raise
+                raise last_err  # pragma: no cover — loop always returns or raises
+
+            try:
+                try:
+                    resp = await _call(use_thinking=True)
+                except Exception as e:
+                    # Some Gemini model variants — confirmed live on
+                    # gemini-flash-lite-latest and gemini-3.5-flash-lite — reject
+                    # thinking_config outright with 400 INVALID_ARGUMENT rather than
+                    # just ignoring it (non-"lite" flash/pro models accept it fine).
+                    # Rather than hardcode which model names support it, retry once
+                    # without thinking_config and only fail the judge if that also
+                    # errors.
+                    if "INVALID_ARGUMENT" in str(e) or "400" in str(e):
+                        log.info(
+                            "gemini judge %s rejected thinking_config, retrying without it: %s",
+                            model, e,
+                        )
+                        resp = await _call(use_thinking=False)
+                    else:
+                        raise
+                content = (resp.text or "").strip()
             except Exception as e:
                 log.warning("gemini judge %s unavailable (skipped): %s", model, e)
                 return None
