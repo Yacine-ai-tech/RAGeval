@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.27] - 2026-08-19
+### Fixed
+- Gemini judge (`gemini/...` in `JUDGE_MODELS`) hard-failed every case on "lite"
+  model variants (`gemini-flash-lite-latest`, `gemini-3.5-flash-lite`): the
+  `thinking_budget=0` config added to stop Gemini from silently burning its output
+  budget on invisible "thinking" tokens (confirmed root cause via `usage_metadata`:
+  `thoughts_token_count=191` vs `candidates_token_count=2`) is itself rejected with
+  `400 INVALID_ARGUMENT` by those model variants. `_judge_groundedness()` now tries
+  `thinking_config` first and falls back to a plain call on 400/`INVALID_ARGUMENT`
+  instead of hardcoding which model names support the field. Also added a short
+  retry for transient `503 UNAVAILABLE` responses (Google-side overload).
+
 ## [0.1.23] - 2026-08-17
 ### Added
 - `/eval/retrieval-bench` now computes real information-retrieval ranking metrics —
