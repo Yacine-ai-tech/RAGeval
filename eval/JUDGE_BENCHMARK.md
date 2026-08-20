@@ -16,8 +16,11 @@ caveats section for exactly what it does and doesn't establish.
 - **Dataset:** HaluEval-QA. Each question yields **2 labelled examples** against the same
   `knowledge` context: the `right_answer` (grounded = 1) and the `hallucinated_answer`
   (grounded = 0).
-- **Judges configured:** the project's current default four-judge `JUDGE_MODELS` (see
-  `.env.example`) — Claude Haiku 4.5, Groq `gpt-oss-120b`, Gemini Flash, GPT-4o-mini.
+- **Judges configured:** a four-judge `JUDGE_MODELS` panel — Claude Haiku 4.5, Groq
+  `gpt-oss-120b`, Gemini Flash, GPT-4o-mini. (Note: `.env.example`'s shipped default panel has
+  since narrowed to three judges — Claude Haiku 4.5, Groq `gpt-oss-120b`, GPT-5-mini — with no
+  Gemini entry; this run predates that change and reflects the four-judge configuration in place
+  at the time, not today's shipped default.)
   **What actually responded, reported exactly as it happened:** Claude Haiku 4.5 and Groq
   `gpt-oss-120b` answered all 200 examples. Gemini Flash was unreliable essentially from the
   start of the run, not cleanly "working then cutting off" — provider-side `503` ("model
@@ -86,7 +89,8 @@ generation biases — hallucinated answers are synthetically constructed, which 
 or harder to catch than naturally occurring hallucinations); Gemini and GPT-4o-mini's near-total
 absence from this run means the reported "consensus" is really a 2-judge result in practice, not a
 true test of the full 4-judge configuration; and this reflects one point in time against specific
-judge-model versions and provider quota states, which will drift.
+judge-model versions and provider quota states, which will drift — including the panel composition
+itself, which has already changed once (see the shipped-default note in Setup above) since this run.
 
 ## 2026 landscape
 
