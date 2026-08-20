@@ -222,7 +222,7 @@ async def answer_question(query: str, context_chunks: list[str]) -> str:
 
         {/* PyPI / self-hosting */}
         <Section icon={Package} iconColor="text-indigo-400" title="Installation & Self-Hosting">
-          <Code>{`pip install omnismart-rageval   # version 0.1.23 — import name stays \`rageval\`
+          <Code>{`pip install omnismart-rageval   # version 0.1.27 — import name stays \`rageval\`
 
 rageval init                    # creates ~/.rageval/rageval.db
 rageval serve --port 8003       # requires the [server] extra (uvicorn)`}</Code>
