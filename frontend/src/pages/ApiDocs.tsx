@@ -36,7 +36,7 @@ const ENDPOINTS: Endpoint[] = [
     path: "/health",
     desc: "Liveness check. Not gated by the internal-token middleware — always reachable, used for uptime probes and the frontend's \"waking backend\" retry loop.",
     body: null,
-    response: `{"status": "ok", "service": "rageval", "version": "0.1.23"}`,
+    response: `{"status": "ok", "service": "rageval", "version": "0.1.27"}`,
   },
   // ── Scoring ─────────────────────────────────────────────────────────────
   {
