@@ -17,6 +17,8 @@ opentelemetry-exporter-otlp>=1.27.0
 pytest>=8.0.0
 pytest-asyncio>=0.24.0
 httpx>=0.27.0
+requests>=2.31.0    # api.py's telemetry ping uses this directly; was only reaching the
+                    # environment transitively via google-genai, not declared here
 psycopg2-binary>=2.9.9
 # Rate limiting via slowapi (wraps the limits library, FastAPI-native).
 slowapi>=0.1.9
