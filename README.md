@@ -8,7 +8,7 @@
 
 Version: **v0.1.27** | `pip install omnismart-rageval`
 
-> 🔗 **Live demo:** https://rageval.ysiddo-ai-projects.app/ — browser dashboard (score a query + view metrics). Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
+> **Live demo:** https://rageval.ysiddo-ai-projects.app/ — browser dashboard (score a query + view metrics). Also fully scriptable — **API:** `/health`, `/eval/*` via `curl`/HTTPie.
 > Self-hosting: see [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## The 60-Second Pitch
