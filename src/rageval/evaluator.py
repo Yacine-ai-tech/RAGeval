@@ -249,7 +249,12 @@ class RAGEvaluator:
         # Hard timeout per judge — a hung call with no timeout stalled a 30-case eval run for
         # ~9h wall-clock before being noticed. asyncio.wait_for() gives every judge call the
         # same ceiling a slow/unresponsive provider can't exceed.
-        judge_timeout = float(os.getenv("JUDGE_TIMEOUT", "30"))
+        # 30s proved too tight in practice: reasoning-family judges (groq/openai/gpt-oss-120b,
+        # google/gemini-2.5-flash) spend most of their budget on reasoning tokens before emitting
+        # any content, and measured warm latency already reached ~13s. A queue spike then pushes a
+        # judge over the ceiling, and because consensus needs MIN_JUDGES_REQUIRED votes, two slow
+        # judges are enough to fail the whole score with a 503. Still env-overridable.
+        judge_timeout = float(os.getenv("JUDGE_TIMEOUT", "90"))
 
         if model.startswith("gemini/"):
             try:
@@ -318,7 +323,10 @@ class RAGEvaluator:
                         raise
                 content = (resp.text or "").strip()
             except Exception as e:
-                log.warning("gemini judge %s unavailable (skipped): %s", model, e)
+                log.warning(
+                    "gemini judge %s unavailable (skipped): %s: %s",
+                    model, type(e).__name__, e or "<no detail>",
+                )
                 return None
         else:
             if not _LITELLM:
@@ -334,7 +342,10 @@ class RAGEvaluator:
                 )
                 content = (resp.choices[0].message.content or "").strip()
             except Exception as e:
-                log.warning("judge %s unavailable (skipped): %s", model, e)
+                log.warning(
+                    "judge %s unavailable (skipped): %s: %s",
+                    model, type(e).__name__, e or "<no detail>",
+                )
                 return None
 
         # Parse the score — strip the prompt's own wording before scanning for a number
