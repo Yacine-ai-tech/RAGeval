@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Bookmark, Check, FlaskConical, Save, AlertTriangle, Scale, UserRoundCheck } from "lucide-react";
 import { PageHeader } from "../kit/AppShell";
@@ -25,6 +25,18 @@ export default function Evaluate() {
   const [saved2, setSaved2] = useState(false);
   const [result, setResult] = useState<Scores | null>(null);
   const [err, setErr] = useState("");
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  // The judge panel is a multi-model consensus call (LONG_TIMEOUT_CAPABILITIES on
+  // the orchestrator) — a cold judge endpoint can take well past a bare spinner's
+  // patience. A running elapsed-time counter is the honest signal.
+  useEffect(() => {
+    if (!busy) return;
+    const startedAt = Date.now();
+    setElapsedMs(0);
+    const id = window.setInterval(() => setElapsedMs(Date.now() - startedAt), 250);
+    return () => window.clearInterval(id);
+  }, [busy]);
 
   const payload = () => ({
     query,
@@ -105,7 +117,15 @@ export default function Evaluate() {
           }
         >
           {busy && !result ? (
-            <ExecutionStages stages={["Embedding query & chunks", "Running judge panel", "Computing consensus", "Checking persona scope"]} active={1} />
+            <div>
+              <ExecutionStages stages={["Embedding query & chunks", "Running judge panel", "Computing consensus", "Checking persona scope"]} active={1} />
+              <div className="mt-2 flex items-center gap-2 text-xs text-muted">
+                <span className="num">{(elapsedMs / 1000).toFixed(0)}s elapsed</span>
+                {elapsedMs > 20000 && (
+                  <span>— still working; a cold judge endpoint can take a minute or more to wake.</span>
+                )}
+              </div>
+            </div>
           ) : err ? (
             <div className="flex items-start gap-3"><AlertTriangle size={16} className="mt-0.5 text-bad" /><div className="text-[13px] text-dim">{err}</div></div>
           ) : !result ? (
