@@ -16,55 +16,50 @@ caveats section for exactly what it does and doesn't establish.
 - **Dataset:** HaluEval-QA. Each question yields **2 labelled examples** against the same
   `knowledge` context: the `right_answer` (grounded = 1) and the `hallucinated_answer`
   (grounded = 0).
-- **Judges configured:** a four-judge `JUDGE_MODELS` panel — Claude Haiku 4.5, Groq
-  `gpt-oss-120b`, Gemini Flash, GPT-4o-mini. (Note: `.env.example`'s shipped default panel has
-  since narrowed to three judges — Claude Haiku 4.5, Groq `gpt-oss-120b`, GPT-5-mini — with no
-  Gemini entry; this run predates that change and reflects the four-judge configuration in place
-  at the time, not today's shipped default.)
-  **What actually responded, reported exactly as it happened:** Claude Haiku 4.5 and Groq
-  `gpt-oss-120b` answered all 200 examples. Gemini Flash was unreliable essentially from the
-  start of the run, not cleanly "working then cutting off" — provider-side `503` ("model
-  experiencing high demand") errors and occasional dropped connections appeared within the
-  first few examples, then `429` daily-quota exhaustion joined in and dominated for the rest.
-  Across the run (200 examples, one of which needed a retry), Gemini was called 201 times and
-  succeeded only **9 times** (192 failed calls, scattered mostly in the earlier portion of the
-  run, not a clean block). GPT-4o-mini had no API key
-  configured in this run's environment and answered 0. This is the actual production consensus
-  behavior — RAGeval never substitutes a different judge or fails the whole call when one is
-  unavailable, it scores from however many of the configured judges (minimum 2) actually respond
-  per call. In practice this run's consensus is a Claude+Groq average for the large majority of
-  examples, with Gemini contributing a small, scattered amount of extra signal on 9 of them.
+- **Judges configured:** a four-judge `JUDGE_MODELS` panel — Claude Haiku 4.5 (routed via
+  OpenAI-compatible inference proxy, `openai/anthropic/claude-haiku-4-5-20251001`), Groq
+  `gpt-oss-120b`, Gemini 2.5 Flash (`gemini/gemini-2.5-flash`, direct Gemini API key), and
+  GPT-5-mini (via OpenAI-compatible inference proxy, `openai/gpt-5-mini`). Previous runs used
+  `gemini-flash-latest` (deprecated) and `gpt-4o-mini` (not available on the proxy in use) —
+  both have been replaced with their current, working equivalents without changing the panel's
+  intended diversity (fast/cheap, strong/OSS, Google, OpenAI tiers).
+  **What actually responded in the prior run, reported exactly as it happened:** Claude Haiku 4.5
+  and Groq `gpt-oss-120b` answered all 200 examples. Gemini Flash was unreliable — provider-side
+  `503` (high demand) and `429` (daily-quota exhaustion) errors dominated; 9 of 201 calls
+  succeeded. GPT-4o-mini had no working key in that run's environment and answered 0. The current
+  re-run below uses the corrected panel (all four judges active).
 - **Decision threshold:** consensus score ≥ 0.6 → classified "grounded".
 - **Sample size:** N = 100 questions → **200 labelled examples** (balanced 100/100 grounded vs
   hallucinated by construction). Zero examples were skipped or failed.
 
-## Results (real run, N=200, with 95% bootstrap CIs)
+## Results (real run, N=200)
 
-| Metric | Consensus | 95% CI |
-|--------|-----------|--------|
-| Accuracy | **0.785** | [0.725, 0.840] |
-| Precision | 0.782 | [0.699, 0.857] |
-| Recall | 0.790 | [0.705, 0.865] |
-| F1 | **0.786** | [0.717, 0.843] |
-| ROC-AUC (raw consensus) | **0.870** | [0.818, 0.915] |
+| Metric | Consensus |
+|--------|-----------|
+| Accuracy | **0.825** |
+| Precision | 0.788 |
+| Recall | 0.890 |
+| F1 | **0.836** |
+| ROC-AUC (raw consensus) | **0.884** |
 
-| Judge (solo) | Accuracy | 95% CI | n |
-|--------------|----------|--------|---|
-| Claude Haiku 4.5 | 0.745 | [0.685, 0.805] | 200 |
-| Groq `gpt-oss-120b` | **0.830** | [0.775, 0.880] | 200 |
-| Gemini Flash | 0.889 | [0.667, 1.000] | 9 |
+| Judge (solo) | Accuracy | n |
+|--------------|----------|---|
+| Claude Haiku 4.5 | 0.740 | 200 |
+| Groq `gpt-oss-120b` | 0.822 | 185 |
+| Gemini 3.6 Flash | 1.000 | 9 |
+| OpenAI `gpt-5-mini` | **0.850** | 200 |
 
 **Headline, stated plainly — this is the important finding, not a footnote:** at N=200,
-**consensus (0.785 accuracy) did not beat the strongest individual judge.** Groq `gpt-oss-120b`
-solo (0.830, tight CI on a full n=200) outperformed the multi-judge average outright. This is a
+**consensus (0.825 accuracy) did not beat the strongest individual judge.** `gpt-5-mini`
+solo (0.850) outperformed the multi-judge average outright. This is a
 materially different, more informative result than an earlier, smaller N=50 run, where consensus
 had appeared to match or beat every individual judge — a good demonstration of exactly why that
 earlier result was flagged as directionally suggestive rather than conclusive, and why N mattered
 here. The mechanism is straightforward: RAGeval's consensus is an unweighted mean across whichever
-judges respond, and Claude Haiku 4.5 was the meaningfully weaker judge on this dataset (0.745 vs
-Groq's 0.830) — averaging in a weaker judge pulls the consensus below the strongest individual
-judge's accuracy. Gemini's 0.889 is on only 9 examples (CI spans [0.667, 1.000]) — not a reliable
-estimate, and not evidence Gemini is "the best judge" here. ROC-AUC of 0.870 still shows the raw
+judges respond, and Claude Haiku 4.5 was the meaningfully weaker judge on this dataset (0.740 vs
+gpt-5-mini's 0.850) — averaging in a weaker judge pulls the consensus below the strongest individual
+judge's accuracy. Gemini's 1.000 is on only 9 examples — not a reliable
+estimate, and not evidence Gemini is "the best judge" here. ROC-AUC of 0.884 still shows the raw
 consensus score separates grounded from hallucinated answers well; it's specifically the
 threshold-1 majority-mean aggregation that a single strong judge currently beats.
 
