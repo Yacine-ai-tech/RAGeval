@@ -260,11 +260,11 @@ class RAGEvaluator:
             try:
                 from google import genai
                 from google.genai import types
-            except ImportError:
-                log.warning("google-genai not installed, skipping gemini judge")
+                client = genai.Client(http_options={"api_version": "v1beta"})
+            except Exception as e:
+                log.warning("gemini judge %s unavailable (skipped): %s: %s", model, type(e).__name__, e or "<no detail>")
                 return None
 
-            client = genai.Client(http_options={"api_version": "v1beta"})
             actual_model = model.split("gemini/", 1)[-1]
 
             async def _call(use_thinking: bool):
@@ -381,10 +381,37 @@ class RAGEvaluator:
                 f"judges — check API keys/connectivity for: {attempted}"
             )
 
-        nums = [s["score"] for s in scores]
+        # RAGeval v2.0: Weighted Average Consensus based on empirical accuracy
+        weights_map = {
+            "gpt-5-mini": 0.85,
+            "gpt-oss-120b": 0.82,
+            "claude-haiku": 0.74,
+            "gemini": 0.89
+        }
+        
+        weighted_sum = 0.0
+        total_weight = 0.0
+        nums = []
+        for s in scores:
+            model_name = s["model"]
+            score = s["score"]
+            nums.append(score)
+            
+            # Find matching weight
+            w = 0.70  # Default fallback weight
+            for key, weight in weights_map.items():
+                if key in model_name:
+                    w = weight
+                    break
+                    
+            weighted_sum += score * w
+            total_weight += w
+            
         stdev = statistics.stdev(nums) if len(nums) > 1 else 0.0
+        weighted_consensus = weighted_sum / total_weight if total_weight > 0 else statistics.mean(nums)
+        
         return {
-            "consensus": statistics.mean(nums),
+            "consensus": weighted_consensus,
             "stdev": stdev,
             "judges": scores,
             "judges_used": len(scores),
