@@ -11,18 +11,11 @@ async def test_rageval_evaluator_initialization():
 async def test_rageval_score_interaction_mocked(monkeypatch):
     ev = RAGEvaluator()
     
-    # Mock the internal litellm call to avoid real API costs during tests
-    async def mock_acompletion(*args, **kwargs):
-        class MockMessage:
-            content = '{"groundedness": 0.9, "completeness": 0.8}'
-        class MockChoice:
-            message = MockMessage()
-        class MockResponse:
-            choices = [MockChoice()]
-        return MockResponse()
+    # Mock the internal judge method to avoid real API costs or missing key errors during unit tests
+    async def mock_judge(*args, **kwargs):
+        return 0.9
         
-    import rageval.evaluator
-    monkeypatch.setattr(rageval.evaluator, "acompletion", mock_acompletion)
+    monkeypatch.setattr(ev, "_judge_groundedness", mock_judge)
 
     res = await ev.score_interaction(
         query="What is the capital of France?",
