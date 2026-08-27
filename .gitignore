@@ -58,3 +58,7 @@ frontend/.vercel/
 # Local dev-session architecture notes (not committed) — session-specific
 ARCHITECTURE.md
 PROJECT_OVERVIEW.md
+
+# Benchmark resume caches (run-local, not committed)
+*.rageval_cache.jsonl
+eval/*_cache.jsonl
