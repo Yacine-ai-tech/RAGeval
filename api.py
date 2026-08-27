@@ -397,7 +397,7 @@ def _resolve_session_id(request: Request, body_session_id: Optional[str] = None)
 async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
     # Rate-limit write endpoints that trigger LLM judge calls.
     if _RATE_LIMIT_ENABLED and _limiter:
-        await _limiter._check_request_limit(request, eval_log, "60/minute")  # type: ignore[arg-type]
+        _limiter._check_request_limit(request, eval_log, "60/minute")  # type: ignore[arg-type]
     session_id = _resolve_session_id(request, req.session_id)
     _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona, session_id=session_id)
     try:
@@ -419,7 +419,7 @@ async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
 async def eval_score(req: ScoreRequest, request: Request) -> Dict[str, Any]:
     # Rate-limit score endpoint — each call triggers multiple LLM judge calls.
     if _RATE_LIMIT_ENABLED and _limiter:
-        await _limiter._check_request_limit(request, eval_score, "60/minute")  # type: ignore[arg-type]
+        _limiter._check_request_limit(request, eval_score, "60/minute")  # type: ignore[arg-type]
     session_id = _resolve_session_id(request, None)
     _emit("interaction.received", route="/eval/score", query=req.query[:120], persona=req.persona, session_id=session_id)
     try:
