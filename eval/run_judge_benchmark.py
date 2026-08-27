@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -45,6 +46,11 @@ async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=25)
     ap.add_argument("--threshold", type=float, default=0.6)
+    ap.add_argument("--cache-file", default=None,
+                     help="Path to a per-example JSONL cache. When set, a completed example is "
+                          "appended as it's scored and reused on a later invocation instead of "
+                          "re-calling the judges — lets a long run survive a provider-side rate "
+                          "limit or a crash without losing already-scored examples.")
     a = ap.parse_args()
 
     from rageval.evaluator import RAGEvaluator, InsufficientJudgesError
@@ -56,11 +62,27 @@ async def main():
     print(f"\nHaluEval multi-judge benchmark — {len(data)} labelled examples "
           f"(judges={settings.JUDGE_MODELS})")
 
+    cached_results: dict = {}
+    if a.cache_file and os.path.exists(a.cache_file):
+        with open(a.cache_file, "r") as f:
+            for line in f:
+                if line.strip():
+                    d = json.loads(line)
+                    cached_results[d["index"]] = d
+        print(f"  resuming from cache: {len(cached_results)} example(s) already scored")
+
     consensus, labels, stdevs = [], [], []
     per_judge: dict = {}
     skipped = 0
     e = RAGEvaluator()
     for i, (ctx, ans, label) in enumerate(data):
+        if i in cached_results:
+            r = cached_results[i]
+            consensus.append(r["consensus"]); labels.append(label); stdevs.append(r["stdev"])
+            for j in r["judges"]:
+                per_judge.setdefault(j["model"], []).append((j["score"], label))
+            continue
+
         # A transient rate-limit on one provider dropping the *live* judge count below
         # MIN_JUDGES_REQUIRED for a single example used to abort the whole run and lose
         # every example already scored — skip just that example instead. A small delay
@@ -72,9 +94,16 @@ async def main():
             print(f"  [{i+1}/{len(data)}] skipped: {exc}")
             await asyncio.sleep(2.0)
             continue
+
         consensus.append(r["consensus"]); labels.append(label); stdevs.append(r["stdev"])
         for j in r["judges"]:
             per_judge.setdefault(j["model"], []).append((j["score"], label))
+
+        if a.cache_file:
+            with open(a.cache_file, "a") as f:
+                f.write(json.dumps({"index": i, "consensus": r["consensus"],
+                                     "stdev": r["stdev"], "judges": r["judges"]}) + "\n")
+
         if (i + 1) % 10 == 0:
             print(f"  scored {i+1}/{len(data)}")
         await asyncio.sleep(2.0)
