@@ -48,16 +48,20 @@ scoring every query, and the consensus (plus the judges' disagreement/stdev) sur
 collapsed into an opaque single number.
 
 **What a real N=200 run against this codebase's own aggregation actually found, and it's worth
-being direct about it:** unweighted averaging did *not* beat the strongest individual judge on that
-run (see the benchmark doc's Headline) — a materially weaker judge in the panel pulled the plain
-mean down below what the single best judge achieved alone. The general literature's case for
-panels — that biases specific to one model are less likely to be shared across judges from
-different providers, so *some* aggregation should reduce that noise — is not the same claim as "an
-unweighted mean of whichever judges respond is the best aggregation," and RAGeval's current
-implementation is the latter, simpler thing. The disagreement/stdev signal the panel produces
-still adds real value (see the benchmark doc), but the headline consensus *score* itself, as
-currently aggregated, is not shown to beat picking the single strongest available judge. That's a
-genuine, measured limitation of the current design, not a hypothetical one.
+being direct about it:** RAGeval's consensus is now an accuracy-weighted mean (an earlier
+unweighted-mean version did not beat the strongest individual judge at all — see the benchmark
+doc's history). With weighting, consensus (0.860) recovers to match the second-best individual
+judge, but still does not beat the single strongest judge (Gemini 3.5 Flash, 0.885) outright (see
+the benchmark doc's Headline). The general literature's case for panels — that biases specific to
+one model are less likely to be shared across judges from different providers, so *some*
+aggregation should reduce that noise — holds up as a fault-tolerance and disagreement-signal
+argument, but weighted averaging alone does not yet make the panel outperform its best member on
+this dataset. The disagreement/stdev signal the panel produces still adds real value (see the
+benchmark doc), but the headline consensus *score* itself, even weighted, is not shown to beat
+picking the single strongest available judge. That's a genuine, measured limitation of the current
+design, not a hypothetical one — and the judge weights themselves are derived from accuracy
+measured on this same dataset, so the comparison isn't fully independent (also noted in the
+benchmark doc).
 
 ## Persona/role-scoped evaluation: a distinctive angle, honestly scoped
 
@@ -105,12 +109,13 @@ these other frameworks for other axes of evaluation.
 Three extensions follow naturally from what's already implemented and measured, rather than
 being a departure from it:
 
-- **Testing a non-uniform aggregation.** The N=200 result above is a specific, measured
-  motivation for this, not a hypothetical one: an unweighted mean of whichever judges respond
-  underperformed the single strongest judge on that run. Accuracy-weighted averaging, or a
-  majority vote requiring minimum agreement, are natural next things to test against the same
-  labelled data — while keeping the properties (no single point of failure, disagreement
-  surfaced rather than hidden) that motivate using more than one judge in the first place.
+- **A stricter aggregation strategy.** Accuracy-weighted averaging is now implemented and
+  measured (see the benchmark doc) — it closes most but not all of the gap to the single best
+  judge, still falling short of it. A majority vote requiring minimum agreement, or weights
+  recalibrated on a held-out split rather than the same data being reported on, are natural next
+  things to test against the same labelled data — while keeping the properties (no single point
+  of failure, disagreement surfaced rather than hidden) that motivate using more than one judge
+  in the first place.
 - **A second, RAG-specific dataset.** HaluEval-QA is a general hallucination-detection
   benchmark, not one built around retrieval-augmented generation specifically. Adding RAGTruth
   (which does span-level hallucination annotation in RAG outputs) or a hand-labeled sample of
