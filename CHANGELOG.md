@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0] - 2026-08-27
+### Changed
+- `RAGEvaluator.score_groundedness_consensus` now computes an accuracy-weighted mean
+  across responding judges instead of a plain unweighted mean. Weights are derived
+  from each judge's own measured accuracy on the HaluEval-QA benchmark. A real N=200
+  rerun with all four judges responding shows weighted consensus (0.860 accuracy)
+  matching the second-best individual judge but still short of the single strongest
+  judge (Gemini 3.5 Flash, 0.885) — see `BENCHMARK.md` / `eval/JUDGE_BENCHMARK.md`.
+
 ## [0.1.27] - 2026-08-19
 ### Fixed
 - Gemini judge (`gemini/...` in `JUDGE_MODELS`) hard-failed every case on "lite"
