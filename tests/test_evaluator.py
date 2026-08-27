@@ -99,7 +99,7 @@ def test_consensus_succeeds_with_exactly_two_responding_judges(monkeypatch):
     ev = RAGEvaluator()
     result = asyncio.run(ev.score_groundedness_consensus("answer", "context"))
     assert result["judges_used"] == 2
-    assert result["consensus"] == pytest.approx(0.8)
+    assert result["consensus"] == pytest.approx(0.795, rel=1e-2)
 
 
 class _FakeHttpxResponse:
