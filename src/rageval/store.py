@@ -151,7 +151,6 @@ def _ensure_initialized() -> None:
     init` run first) fails on a fresh install with "no such table: rageval_log" — the
     README's whole "pip install, decorate, done" pitch depends on this working with zero
     setup steps."""
-    global _initialized
     if not _initialized:
         init_rageval_table()
 
