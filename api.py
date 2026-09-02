@@ -323,7 +323,17 @@ async def dashboard():
     root = os.path.dirname(__file__)
     spa = os.path.join(root, "frontend", "dist", "index.html")
     if os.path.exists(spa):
-        return FileResponse(spa)
+        # index.html references content-hashed asset filenames (e.g.
+        # /assets/index-<hash>.js) that change on every frontend deploy, while
+        # its own URL ("/") never changes. Without an explicit no-cache
+        # directive here, upstream CDNs/proxies apply their own heuristic
+        # freshness (observed: hours-long caching), which after a deploy can
+        # keep serving a stale index.html that points at asset files the new
+        # build no longer ships -- breaking the app with a blank page and a
+        # "MIME type text/html, expected JavaScript" console error. The
+        # hashed files under /assets/ are safe to cache long-term (see the
+        # StaticFiles mount below); only this entry document must stay fresh.
+        return FileResponse(spa, headers={"Cache-Control": "no-cache, must-revalidate"})
     return {"service": "rageval", "docs": "/docs"}
 
 
@@ -587,5 +597,9 @@ async def spa_fallback(full_path: str):
         return FileResponse(candidate)
     spa = os.path.join(dist, "index.html")
     if os.path.exists(spa):
-        return FileResponse(spa)
+        # Same reasoning as the "/" dashboard route above: this document's
+        # URL is stable per-route but its content (which JS/CSS bundle it
+        # references) changes on every deploy, so it must never be cached
+        # long-lived by an intermediate CDN/proxy.
+        return FileResponse(spa, headers={"Cache-Control": "no-cache, must-revalidate"})
     raise HTTPException(status_code=404, detail="Not Found")
