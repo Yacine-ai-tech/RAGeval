@@ -83,16 +83,26 @@ async def main():
                 per_judge.setdefault(j["model"], []).append((j["score"], label))
             continue
 
-        # A transient rate-limit on one provider dropping the *live* judge count below
-        # MIN_JUDGES_REQUIRED for a single example used to abort the whole run and lose
-        # every example already scored — skip just that example instead. A small delay
-        # keeps Groq's free-tier 30 req/min cap from tripping every run in the first place.
-        try:
-            r = await e.score_groundedness_consensus(ans, ctx)
-        except InsufficientJudgesError as exc:
-            skipped += 1
-            print(f"  [{i+1}/{len(data)}] skipped: {exc}")
-            await asyncio.sleep(2.0)
+        groq_pool = [k.strip() for k in os.getenv("GROQ_API_KEYS", "").split(",") if k.strip()]
+        if not groq_pool and os.getenv("GROQ_API_KEY"):
+            groq_pool = [os.getenv("GROQ_API_KEY", "").strip()]
+        groq_idx = 0
+        r = None
+        for attempt in range(2):
+            try:
+                r = await e.score_groundedness_consensus(ans, ctx)
+                break
+            except InsufficientJudgesError as exc:
+                if attempt == 0 and len(groq_pool) > 1:
+                    groq_idx = (groq_idx + 1) % len(groq_pool)
+                    os.environ["GROQ_API_KEY"] = groq_pool[groq_idx]
+                    await asyncio.sleep(2.0)
+                    continue
+                skipped += 1
+                print(f"  [{i+1}/{len(data)}] skipped: {exc}")
+                await asyncio.sleep(2.0)
+                break
+        if r is None:
             continue
 
         consensus.append(r["consensus"]); labels.append(label); stdevs.append(r["stdev"])

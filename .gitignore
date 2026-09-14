@@ -62,3 +62,4 @@ PROJECT_OVERVIEW.md
 # Benchmark resume caches (run-local, not committed)
 *.rageval_cache.jsonl
 eval/*_cache.jsonl
+eval/cache/
