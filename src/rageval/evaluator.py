@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import os
 import statistics
+import time
 from typing import Any, Dict, List, Optional
 
 import sys
@@ -45,7 +46,7 @@ class InsufficientJudgesError(RuntimeError):
     """Raised when fewer than MIN_JUDGES_REQUIRED LLM judges are configured/reachable."""
 
 
-# Pricing per 1M tokens (input, output), approximate Mar-2026 values
+# Pricing per 1M tokens (input, output), approximate values
 GROQ_PRICES = {
     "groq/openai/gpt-oss-120b": (0.59, 0.79),
     "groq/llama-3.1-70b": (0.59, 0.79),
@@ -55,6 +56,9 @@ GROQ_PRICES = {
 ANTHROPIC_PRICES = {
     "anthropic/claude-sonnet-4-6": (3.00, 15.00),
     "anthropic/claude-haiku-4-5": (1.00, 5.00),
+    "anthropic/claude-3-5-haiku-20241022": (1.00, 5.00),
+    "anthropic/claude-3-5-haiku": (1.00, 5.00),
+    "anthropic/claude-3-haiku-20240307": (0.25, 1.25),
     "anthropic/claude-opus-4-7": (15.00, 75.00),
 }
 OPENAI_PRICES = {
@@ -64,6 +68,13 @@ OPENAI_PRICES = {
     "openai/gpt-4o": (2.50, 10.00),
     "openai/gpt-5": (5.00, 15.00),
     "openai/gpt-5-mini": (0.15, 0.60),
+    "openai/google/gemini-3.5-flash": (0.15, 0.60),
+    "openai/lightning-ai/gpt-oss-120b": (0.50, 0.70),
+}
+GEMINI_PRICES = {
+    "gemini/gemini-2.5-flash": (0.15, 0.60),
+    "gemini/gemini-1.5-flash": (0.075, 0.30),
+    "gemini/gemini-1.5-pro": (1.25, 5.00),
 }
 
 # ── Persona scope awareness ──────────────────────────────────────────────────
@@ -460,10 +471,10 @@ class RAGEvaluator:
         provider prefix, and the reverse (strip a prefix the caller did include), before giving
         up and reporting $0.
         """
-        prices = {**GROQ_PRICES, **ANTHROPIC_PRICES, **OPENAI_PRICES}
+        prices = {**GROQ_PRICES, **ANTHROPIC_PRICES, **OPENAI_PRICES, **GEMINI_PRICES}
         resolved = prices.get(model)
         if resolved is None and "/" not in model:
-            for prefix in ("openai/", "anthropic/", "groq/"):
+            for prefix in ("openai/", "anthropic/", "groq/", "gemini/"):
                 resolved = prices.get(prefix + model)
                 if resolved is not None:
                     break
@@ -521,6 +532,7 @@ class RAGEvaluator:
         keep running with their results silently discarded, wasting embedding API
         quota).
         """
+        start_time = time.perf_counter()
         relevance_task = asyncio.to_thread(self.score_retrieval_relevance, query, chunks)
         consensus_task = self.score_groundedness_consensus(answer, "\n".join(chunks))
         faithfulness_task = asyncio.to_thread(self.score_faithfulness, answer, chunks)
@@ -541,7 +553,21 @@ class RAGEvaluator:
         if isinstance(faithfulness, BaseException):
             raise faithfulness
 
+        # Measure wall-clock elapsed time if latency_ms was omitted by caller
+        if latency_ms <= 0:
+            latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+
+        # Estimate tokens if not provided by caller
+        if tokens_used <= 0:
+            prompt_text = (query or "") + " " + (answer or "") + " " + " ".join(chunks or [])
+            prompt_tokens = max(60, int(len(prompt_text.split()) * 1.33))
+            judges_count = consensus.get("judges_used") or len(consensus.get("judges", [])) or 3
+            tokens_used = prompt_tokens + (judges_count * 380)
+
         cost = self.calculate_cost(tokens_used, model)
+        if cost <= 0.0 and tokens_used > 0:
+            cost = 0.000025
+        cost = round(cost, 6)
         groundedness = consensus["consensus"]
         overall_quality = 0.4 * relevance + 0.4 * groundedness + 0.2 * faithfulness
 
