@@ -21,10 +21,10 @@ RAGEVAL_HOME.mkdir(parents=True, exist_ok=True)
 
 # Canonical default — must mirror _compat.py exactly.
 _DEFAULT_JUDGE_MODELS = (
-    "anthropic/claude-haiku-4-5,"
-    "groq/openai/gpt-oss-120b,"
-    "gemini/gemini-flash-latest,"
-    "openai/gpt-4o-mini"
+    "openai/gpt-5-mini,"
+    "openai/google/gemini-3.5-flash,"
+    "openai/lightning-ai/gpt-oss-120b,"
+    "groq/openai/gpt-oss-120b"
 )
 
 
