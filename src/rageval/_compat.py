@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover - read-only home, etc.
 # Canonical default judge list — must match core/config.py exactly.
 # gemini/gemini-flash-latest is the current production alias.
 _DEFAULT_JUDGE_MODELS = (
+    "anthropic/claude-3-5-haiku-20241022,"
     "openai/gpt-5-mini,"
     "openai/google/gemini-3.5-flash,"
     "openai/lightning-ai/gpt-oss-120b,"
