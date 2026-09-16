@@ -122,7 +122,7 @@ export default function Evaluate() {
               <div className="mt-2 flex items-center gap-2 text-xs text-muted">
                 <span className="num">{(elapsedMs / 1000).toFixed(0)}s elapsed</span>
                 {elapsedMs > 20000 && (
-                  <span>— still working; a cold judge endpoint can take a minute or more to wake.</span>
+                  <span>— evaluating test case with deep LLM verification…</span>
                 )}
               </div>
             </div>
