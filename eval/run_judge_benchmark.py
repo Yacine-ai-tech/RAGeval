@@ -17,7 +17,11 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+APP_ROOT = Path(__file__).resolve().parent.parent
+# src/ must come first — otherwise `import rageval` silently resolves to whatever
+# version of omnismart-rageval is pip-installed globally instead of this local dev copy.
+sys.path.insert(0, str(APP_ROOT / "src"))
+sys.path.insert(0, str(APP_ROOT))
 
 
 def _load_halueval(n: int):
