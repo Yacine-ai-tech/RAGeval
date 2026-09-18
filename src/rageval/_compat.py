@@ -22,13 +22,15 @@ except Exception:  # pragma: no cover - read-only home, etc.
     pass
 
 
-# Canonical default judge list — must match core/config.py exactly.
-# gemini/gemini-flash-latest is the current production alias.
+# Canonical default judge list — must match core/config.py exactly. Each provider
+# routes on its own standard API key (ANTHROPIC_API_KEY / OPENAI_API_KEY /
+# GEMINI_API_KEY / GROQ_API_KEY) via litellm's normal "<provider>/<model>" prefix
+# convention — set only the keys for the judges you want active; a missing key
+# just skips that judge (MIN_JUDGES_REQUIRED handles the reduced quorum).
 _DEFAULT_JUDGE_MODELS = (
-    "anthropic/claude-3-5-haiku-20241022,"
+    "anthropic/claude-haiku-4-5-20251001,"
     "openai/gpt-5-mini,"
-    "openai/google/gemini-3.5-flash,"
-    "openai/lightning-ai/gpt-oss-120b,"
+    "gemini/gemini-2.5-flash,"
     "groq/openai/gpt-oss-120b"
 )
 
