@@ -87,6 +87,71 @@ as a **human-review or stronger-judge escalation trigger**, never as an input fo
 the score itself. That's the one part of the original design that was already correct; the
 recommendation this testing changes is which score to report as the primary groundedness number.
 
+## What the broader 2024–2026 judge-panel literature says, and what's implemented from it
+
+The finding above — a panel of same-genre LLM judges consistently losing to its single
+strongest member — is not unique to this dataset or this codebase. A literature search
+turned up direct, recent confirmation and two concrete, implementable responses to it,
+both now wired into `RAGEvaluator.score_groundedness_consensus()` as opt-in strategies
+(off by default — see below for why).
+
+- **["Nine Judges, Two Effective Votes: Correlated Errors Undermine LLM Evaluation
+  Panels"](https://arxiv.org/abs/2605.29800)** (Kohli, 2026) tested 9 frontier judges
+  across 7 model families and found they carry only ~2 independent votes' worth of
+  information, because they make the same mistakes on the same items. The paper's
+  central claim — the best single judge matches or outperforms the full panel across
+  all conditions tested, and smarter aggregation closes at most 11% of the gap even with
+  ground truth available — is exactly this project's own measured result (Gemini alone
+  beats every weighting and cascade strategy tried here). The paper's conclusion is that
+  this is a **correlated-judges problem, not a combining-formula problem**: no amount of
+  arithmetic cleverness over the same genre of judge escapes it.
+- **[RoPoLL: Robust Panel of LLM Judges](https://arxiv.org/abs/2606.30931)** (Acharya et
+  al., Amazon, 2026) proves that plain averaging (PoLL-style) has *unbounded* bias
+  whenever even one judge fails in a correlated way, and proposes the **geometric
+  median** as a tuning-free, breakdown-point-1/2 robust replacement — up to half the
+  panel can be biased or wrong before the estimate degrades, unlike the mean, which a
+  single outlier can move arbitrarily far. For RAGeval's case (a single scalar 0–1 score
+  per judge, not a vector), the multivariate geometric median reduces exactly to the
+  classical **weighted median** — implemented as `RAGEvaluator._weighted_median()` and
+  selectable via `RAGEVAL_AGGREGATION_STRATEGY=geometric_median`. Measured on the same
+  240-example subset used above, it does not, in practice, close the gap to the single
+  best judge either (matching the "Nine Judges" paper's claim that this is a
+  correlated-judges ceiling, not a formula problem) — a real, measured null result, not
+  assumed from the theory alone.
+- **[Stopping and Routing LLM Judge Panels](https://arxiv.org/pdf/2608.19802)** (2026)
+  gives useful language for the decision already made empirically here: a judge is a
+  *copy* (adds no information — drop it), a *complement* (genuinely improves the panel —
+  keep it), or a *specialist* (helps only on specific slices — route to it
+  conditionally). On this dataset, Groq and GPT-5-mini behave like copies of each other
+  relative to Gemini, not complements.
+- **["Beyond LLM-as-a-Judge: Independence-Aware Heterogeneous
+  Evaluation"](https://zenodo.org/records/22368667)** makes the structural point that
+  motivated the one genuinely new addition here: correlated errors happen because
+  same-genre LLM judges share training data and failure modes, so adding more of them
+  cannot escape the ceiling the "Nine Judges" paper measured — the fix has to change
+  *what* is being combined, not just *how*. `RAGEvaluator.score_symbolic_groundedness()`
+  adds a **deterministic, non-LLM verification signal** — numeric-fact consistency
+  (does every number the answer states actually appear in the retrieved context?) plus
+  the existing lexical-overlap machinery — as a structurally independent panel member,
+  selectable via `RAGEVAL_INCLUDE_SYMBOLIC_JUDGE=true`. Measured on the same 240-example
+  subset: the symbolic judge alone is weak (0.5625 accuracy — HaluEval-QA's
+  hallucinations are mostly invented facts/entities, not wrong numbers, so a numeric
+  check has limited reach on this particular dataset), but folding it into the
+  weighted-mean panel raises **ROC-AUC from 0.8709 to 0.9191** — a real, meaningful
+  improvement in how well the blended score *ranks* grounded versus hallucinated answers,
+  even though raw accuracy at the fixed 0.6 threshold barely moves and still doesn't
+  clear Gemini alone. This is the one tested change that adds genuinely uncorrelated
+  signal rather than recombining the same three correlated ones — a small, real gain
+  from a different mechanism, not a bigger gain from the same one.
+
+**Why both are opt-in, not new defaults.** Turning either on changes every existing
+deployment's consensus number the moment it's enabled — for a published package
+(`pip install omnismart-rageval`) with users who may already depend on today's values,
+silently changing that on upgrade would be a real regression, not an improvement. Both
+are exposed as environment-variable-gated strategies (`RAGEVAL_AGGREGATION_STRATEGY`,
+`RAGEVAL_INCLUDE_SYMBOLIC_JUDGE`) precisely so adopting them is a deliberate choice, not
+a silent one.
+
 ## Persona/role-scoped evaluation: a distinctive angle, honestly scoped
 
 Beyond groundedness and faithfulness, RAGeval flags when a persona-scoped answer surfaces
@@ -140,11 +205,23 @@ being a departure from it:
   formula; it's changing what's reported as the headline groundedness score, while keeping the
   full panel's disagreement signal as a review-escalation trigger (already implemented) rather
   than a scoring input.
+- **Geometric median and a heterogeneous (non-LLM) verifier — implemented and measured, not
+  just proposed.** Both are now real, opt-in options (`RAGEVAL_AGGREGATION_STRATEGY=
+  geometric_median`, `RAGEVAL_INCLUDE_SYMBOLIC_JUDGE=true`), grounded in RoPoLL (Acharya et
+  al. 2026) and the Independence-Aware Heterogeneous Evaluation line of work respectively —
+  see the literature section above for the full account. Measured result: geometric median
+  alone doesn't close the gap to the single best judge either (confirming this is a
+  correlated-judges ceiling, not a formula problem), but the heterogeneous symbolic judge
+  measurably improves the panel's ROC-AUC (0.8709 → 0.9191) even though it doesn't move
+  accuracy-at-threshold past Gemini alone — a real, if partial, escape from the "more of the
+  same genre doesn't help" ceiling.
 - **A meta-judge / judge-of-judges.** Rather than combining scores arithmetically, a model (or a
   small learned classifier) that reads every judge's verdict and rationale and decides can, in
   principle, genuinely beat the best individual judge — because it performs real arbitration
-  instead of linear combination. This is a materially different mechanism from anything tested
-  so far and is the most promising untested direction.
+  instead of linear combination. This remains untested and is now the most promising
+  remaining direction, since both tested statistical fixes (weighting, geometric median) and
+  the tested structural fix (adding one heterogeneous judge) have hit their respective
+  ceilings.
 - **Calibration/stacking on held-out labels.** Weighting by raw accuracy (what's implemented
   today) is a known-weak scheme in the classifier-ensembling literature this generalizes from;
   weighting by each judge's calibrated per-case confidence, or training a small stacking model
