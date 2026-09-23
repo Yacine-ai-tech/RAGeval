@@ -122,6 +122,51 @@ likely wrong — just not as an input folded back into a combined score.
 
 ---
 
+## Rerun: Geometric Median and a Heterogeneous (Non-LLM) Judge (2026-09-23)
+
+Two literature-backed alternatives were implemented as opt-in aggregation strategies (see
+`RESEARCH.md` for the full literature review and why both default off) and measured against
+the same 240-example, 3-judge cached subset used above.
+
+**Geometric median** (RoPoLL, Acharya et al. 2026 — reduces to the classical weighted median
+for RAGeval's scalar-score case): a tuning-free, breakdown-point-1/2 robust replacement for
+the weighted mean.
+
+**Symbolic/deterministic judge** (`score_symbolic_groundedness`, Independence-Aware
+Heterogeneous Evaluation): a $0, non-LLM verification signal — numeric-fact consistency
+(does every number the answer states appear in the retrieved context?) plus lexical overlap
+— added as a structurally independent 4th panel member.
+
+| Configuration | Accuracy | ROC-AUC |
+|---|---|---|
+| Gemini alone (reference) | **0.8542** | — |
+| Weighted mean, 3 LLM judges (baseline) | 0.8167 | 0.8709 |
+| Weighted mean + symbolic judge | 0.8208 | **0.9191** |
+| Geometric median, 3 LLM judges | 0.8167 | 0.8256 |
+| Geometric median + symbolic judge | 0.8167 | 0.8256 |
+| Symbolic judge alone | 0.5625 | — |
+
+**Findings:**
+- **Geometric median does not close the gap to Gemini alone** — confirming, on this
+  dataset, the "Nine Judges, Two Effective Votes" (Kohli, 2026) claim that this is a
+  correlated-judges ceiling rather than a combining-formula problem: a more robust formula
+  over the *same* correlated judges still can't out-perform the strongest one.
+- **The symbolic judge alone is weak** (0.5625) — HaluEval-QA's hallucinations are mostly
+  invented facts/entities, not wrong numbers, so a numeric-consistency check has limited
+  reach on this particular dataset.
+- **But folding it into the weighted-mean panel meaningfully improves ROC-AUC** (0.8709 →
+  0.9191) — a real, structural gain from adding a genuinely uncorrelated signal, distinct
+  from anything the same-genre reweighting/cascade experiments above achieved. Raw
+  accuracy-at-threshold barely moves and still trails Gemini alone, so this is a partial,
+  honest result: real evidence that heterogeneous verification helps, not yet enough to
+  change which score should be reported as primary.
+
+**Both are shipped as opt-in, not new defaults** (`RAGEVAL_AGGREGATION_STRATEGY=
+geometric_median`, `RAGEVAL_INCLUDE_SYMBOLIC_JUDGE=true`) — turning either on changes every
+existing deployment's consensus number, which shouldn't happen silently on an upgrade.
+
+---
+
 ## Further Reading
 
 - [`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md) — full methodology, raw numbers,

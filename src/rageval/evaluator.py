@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import statistics
 import time
 from typing import Any, Dict, List, Optional
@@ -192,6 +193,68 @@ class RAGEvaluator:
             return 0.0
         return len(ta & tb) / len(ta)
 
+    _NUM_RE = re.compile(r"-?\d[\d,]*\.?\d*%?")
+
+    @classmethod
+    def score_symbolic_groundedness(cls, answer: str, context: str) -> float:
+        """Deterministic, non-LLM groundedness signal — $0, no API call.
+
+        Motivation (Independence-Aware Heterogeneous Evaluation, 2026; and "Nine Judges,
+        Two Effective Votes: Correlated Errors Undermine LLM Evaluation Panels", Kohli
+        2026): LLM-as-judge panels made entirely of same-genre LLM judges carry much less
+        independent information than their headcount suggests, because their errors are
+        correlated — they share training data and failure modes. No amount of clever
+        aggregation over more same-genre judges escapes that ceiling. The fix that line of
+        work proposes is structural rather than statistical: add a verification signal
+        from a genuinely different paradigm, so its errors are uncorrelated with the LLM
+        judges' shared blind spots.
+
+        Combines two such signals, both already $0 (no LLM call) and reusing this class's
+        existing machinery rather than introducing a new dependency:
+        1. Numeric-fact consistency: every number/percentage the answer states must appear
+           (allowing for thousands-separator formatting) somewhere in the retrieved
+           context — a hallucinated number is one of the most common, and most cheaply
+           checkable, grounding failures, and an LLM judge is not the only or best tool
+           for catching it.
+        2. Lexical overlap (`_lexical_sim`, already used by `score_faithfulness`) as the
+           semantic-grounding component when there are no numeric claims to check.
+        """
+        numbers_in_answer = {n.replace(",", "") for n in cls._NUM_RE.findall(answer or "")}
+        if numbers_in_answer:
+            numbers_in_context = {n.replace(",", "") for n in cls._NUM_RE.findall(context or "")}
+            hits = sum(1 for n in numbers_in_answer if n in numbers_in_context)
+            numeric_score = hits / len(numbers_in_answer)
+        else:
+            numeric_score = 1.0  # no numeric claims made, so none to falsify
+        lexical_score = cls._lexical_sim(answer, context)
+        return round(0.6 * numeric_score + 0.4 * lexical_score, 4)
+
+    @staticmethod
+    def _weighted_median(values: List[float], weights: Optional[List[float]] = None) -> float:
+        """Scalar reduction of the geometric median (RoPoLL, Acharya et al. 2026).
+
+        RoPoLL's actual proposal is the multivariate geometric median over judges' output
+        vectors; for the 1-D case here (a single scalar groundedness score per judge),
+        the multivariate geometric median reduces exactly to the classical weighted
+        median. Same property RoPoLL proves for the general estimator: a breakdown point
+        of 1/2 — up to half the panel can be biased or wrong before the estimate is
+        pulled off, unlike the mean, which a single outlier can move arbitrarily far.
+        """
+        if not values:
+            return 0.0
+        if weights is None:
+            weights = [1.0] * len(values)
+        pairs = sorted(zip(values, weights), key=lambda p: p[0])
+        total = sum(w for _, w in pairs)
+        if total <= 0:
+            return statistics.median(values)
+        cum = 0.0
+        for v, w in pairs:
+            cum += w
+            if cum >= total / 2:
+                return v
+        return pairs[-1][0]
+
     def score_retrieval_relevance(self, query: str, chunks: List[str]) -> float:
         """Mean cosine(query, retrieved chunks). Falls back to lexical overlap."""
         if not chunks:
@@ -364,7 +427,31 @@ class RAGEvaluator:
         return max(0.0, min(1.0, float(m.group()))) if m else None
 
     async def score_groundedness_consensus(self, answer: str, context: str) -> Dict[str, Any]:
-        """Multi-judge consensus across the configured JUDGE_MODELS."""
+        """Multi-judge consensus across the configured JUDGE_MODELS.
+
+        Aggregation is configurable via `settings.RAGEVAL_AGGREGATION_STRATEGY`:
+        - "weighted_mean" (default, kept for backward compatibility): each judge weighted
+          by its own empirically measured accuracy. A real, GPU/Groq-benchmark-validated
+          limitation of this — and every other combination tried, including a
+          disagreement-gated cascade — is documented in BENCHMARK.md: none of them beat
+          simply reporting the single strongest judge's own score on this project's own
+          HaluEval rerun, because "Nine Judges, Two Effective Votes: Correlated Errors
+          Undermine LLM Evaluation Panels" (Kohli, 2026) is right that this is a
+          correlated-judges problem, not a combining-formula problem.
+        - "geometric_median": swaps the weighted mean for the weighted median (the 1-D
+          reduction of RoPoLL's geometric median, Acharya et al. 2026) — theoretically the
+          more robust choice when judges may be correlated (breakdown point 1/2 vs. the
+          mean's 0), though BENCHMARK.md's own measurement is that it does not, in
+          practice, close the gap to the single best judge on this dataset either — a
+          real, measured result, not assumed from the theory alone.
+
+        When `settings.RAGEVAL_INCLUDE_SYMBOLIC_JUDGE` is set (default on), a deterministic,
+        non-LLM verification signal (`score_symbolic_groundedness`) is folded into the panel
+        as an additional, structurally-independent "judge" — see that method's docstring.
+        Because it's local and $0, it never reduces to a quota/rate-limit failure mode the
+        way an LLM judge can, and it's the one addition in this literature that changes
+        *what's being combined* rather than *how it's combined*.
+        """
         if len(settings.JUDGE_MODELS) < MIN_JUDGES_REQUIRED:
             raise InsufficientJudgesError(
                 f"RAGeval requires at least {MIN_JUDGES_REQUIRED} configured LLM judges "
@@ -390,39 +477,47 @@ class RAGEvaluator:
                 f"judges — check API keys/connectivity for: {attempted}"
             )
 
-        # RAGeval v2.0: Weighted Average Consensus based on empirical accuracy
+        # RAGeval v2.0: empirically-measured-accuracy weights, same for both aggregation
+        # strategies below (weighted mean, and weighted median) — only the combining
+        # function differs.
         weights_map = {
             "gpt-5-mini": 0.85,
             "gpt-oss-120b": 0.82,
             "claude-haiku": 0.74,
-            "gemini": 0.89
+            "gemini": 0.89,
+            "symbolic": 0.70,  # untuned — no labelled data yet to measure this judge's own accuracy on
         }
-        
-        weighted_sum = 0.0
-        total_weight = 0.0
-        nums = []
-        for s in scores:
-            model_name = s["model"]
-            score = s["score"]
-            nums.append(score)
-            
-            # Find matching weight
-            w = 0.70  # Default fallback weight
+
+        def _weight_for(model_name: str) -> float:
             for key, weight in weights_map.items():
                 if key in model_name:
-                    w = weight
-                    break
-                    
-            weighted_sum += score * w
-            total_weight += w
-            
+                    return weight
+            return 0.70  # default fallback weight
+
+        panel = list(scores)
+        if settings.RAGEVAL_INCLUDE_SYMBOLIC_JUDGE and context:
+            panel.append({"model": "symbolic/deterministic", "score": self.score_symbolic_groundedness(answer, context)})
+
+        nums = [p["score"] for p in panel]
+        judge_weights = [_weight_for(p["model"]) for p in panel]
         stdev = statistics.stdev(nums) if len(nums) > 1 else 0.0
-        weighted_consensus = weighted_sum / total_weight if total_weight > 0 else statistics.mean(nums)
-        
+
+        strategy = getattr(settings, "RAGEVAL_AGGREGATION_STRATEGY", "weighted_mean")
+        if strategy == "geometric_median":
+            consensus = self._weighted_median(nums, judge_weights)
+        else:
+            total_weight = sum(judge_weights)
+            consensus = (
+                sum(s * w for s, w in zip(nums, judge_weights)) / total_weight
+                if total_weight > 0 else statistics.mean(nums)
+            )
+
         return {
-            "consensus": weighted_consensus,
+            "consensus": consensus,
             "stdev": stdev,
             "judges": scores,
+            "symbolic_judge": panel[-1] if (settings.RAGEVAL_INCLUDE_SYMBOLIC_JUDGE and context) else None,
+            "aggregation_strategy": strategy,
             "judges_used": len(scores),
             "flag_for_review": stdev > 0.2,
         }

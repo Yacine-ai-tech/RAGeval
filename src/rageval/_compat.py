@@ -59,6 +59,11 @@ class _Settings:
             "JUDGE_MODELS", _DEFAULT_JUDGE_MODELS,
         ).split(",") if m.strip()
     ]
+    # Keep in sync with core/config.py — see evaluator.py's score_groundedness_consensus()
+    # docstring for the research basis (RoPoLL geometric median; Independence-Aware
+    # Heterogeneous Evaluation for the symbolic judge).
+    RAGEVAL_AGGREGATION_STRATEGY = os.getenv("RAGEVAL_AGGREGATION_STRATEGY", "weighted_mean")
+    RAGEVAL_INCLUDE_SYMBOLIC_JUDGE = os.getenv("RAGEVAL_INCLUDE_SYMBOLIC_JUDGE", "false").lower() == "true"
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")

@@ -64,6 +64,22 @@ class Settings:
         ).split(",") if m.strip()
     ]
 
+    # Consensus aggregation strategy — see evaluator.py's score_groundedness_consensus()
+    # docstring for the research this is grounded in. "weighted_mean" is the long-standing
+    # default (kept for backward compatibility); "geometric_median" is the empirically and
+    # theoretically more robust choice when judges may be correlated (RoPoLL, Acharya et
+    # al. 2026) — for the scalar (single 0-1 score per judge) case here, the geometric
+    # median reduces to the classical weighted median.
+    RAGEVAL_AGGREGATION_STRATEGY = os.getenv("RAGEVAL_AGGREGATION_STRATEGY", "weighted_mean")
+    # Adds a deterministic, non-LLM verification signal into the panel (numeric-fact
+    # consistency + lexical/semantic overlap against the retrieved context) — structurally
+    # independent of the LLM judges' shared training-data biases, per the
+    # Independence-Aware Heterogeneous Evaluation line of work. Off by default —
+    # adding a panel member changes every existing deployment's consensus numbers, so
+    # this is opt-in rather than silently changing behavior for anyone already running
+    # RAGeval. $0 either way (no API call) when turned on.
+    RAGEVAL_INCLUDE_SYMBOLIC_JUDGE = os.getenv("RAGEVAL_INCLUDE_SYMBOLIC_JUDGE", "false").lower() == "true"
+
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")

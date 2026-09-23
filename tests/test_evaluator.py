@@ -344,3 +344,97 @@ def test_score_ranking_no_relevant_docs_retrieved():
 def test_score_ranking_empty_relevant_set_is_zero_not_divide_by_zero():
     m = RAGEvaluator.score_ranking(["a", "b"], [], precision_k=5, recall_k=5)
     assert m == {"precision_at_k": 0.0, "recall_at_k": 0.0, "reciprocal_rank": 0.0}
+
+
+# ---------------------------------------------------------------------------
+# Geometric median (RoPoLL, Acharya et al. 2026) and symbolic/heterogeneous
+# judge — see score_groundedness_consensus()'s docstring for the research basis.
+# ---------------------------------------------------------------------------
+
+def test_weighted_median_resists_a_minority_outlier():
+    """Two judges agree at 0.9, one disagrees at 0.1 — the weighted median should
+    side with the majority, unlike the mean, which any single judge can drag down."""
+    assert RAGEvaluator._weighted_median([0.9, 0.9, 0.1]) == pytest.approx(0.9)
+    assert sum([0.9, 0.9, 0.1]) / 3 == pytest.approx(0.6333, rel=1e-3)  # mean, for contrast
+
+
+def test_weighted_median_single_value():
+    assert RAGEvaluator._weighted_median([0.42]) == pytest.approx(0.42)
+
+
+def test_weighted_median_empty_is_zero_not_a_crash():
+    assert RAGEvaluator._weighted_median([]) == 0.0
+
+
+def test_weighted_median_respects_weights_not_just_count():
+    # Two low-weight judges at 0.9 vs one high-weight judge at 0.1 — weight, not a
+    # plain majority vote, should decide it.
+    result = RAGEvaluator._weighted_median([0.9, 0.9, 0.1], weights=[0.1, 0.1, 10.0])
+    assert result == pytest.approx(0.1)
+
+
+def test_symbolic_groundedness_penalizes_a_hallucinated_number():
+    ev = RAGEvaluator.__new__(RAGEvaluator)
+    context = "Revenue grew to $3,278,040 in Q2 2026, up from $2,778,000 in Q1."
+    grounded = ev.score_symbolic_groundedness("Revenue reached $3,278,040 this quarter.", context)
+    hallucinated = ev.score_symbolic_groundedness("Revenue reached $9,999,999 this quarter.", context)
+    assert grounded > hallucinated
+    assert grounded > 0.7
+    assert hallucinated < 0.2
+
+
+def test_symbolic_groundedness_no_numeric_claims_falls_back_to_lexical_only():
+    ev = RAGEvaluator.__new__(RAGEvaluator)
+    # No numbers in the answer at all — nothing to falsify, so the numeric component
+    # contributes its full weight regardless of context, leaving only the lexical term
+    # to actually discriminate.
+    context = "The quarterly report covers revenue, margin, and headcount trends."
+    on_topic = ev.score_symbolic_groundedness("The report covers revenue and margin.", context)
+    off_topic = ev.score_symbolic_groundedness("Bananas are a good source of potassium.", context)
+    assert on_topic > off_topic
+
+
+def test_consensus_geometric_median_strategy(monkeypatch):
+    """With RAGEVAL_AGGREGATION_STRATEGY=geometric_median, two agreeing judges should
+    outweigh one disagreeing judge, rather than being averaged toward the middle."""
+    monkeypatch.setattr(settings, "JUDGE_MODELS", [
+        "anthropic/claude-haiku-4-5", "groq/openai/gpt-oss-120b", "gemini/gemini-2.5-flash",
+    ])
+    monkeypatch.setattr(settings, "RAGEVAL_AGGREGATION_STRATEGY", "geometric_median")
+    monkeypatch.setattr(settings, "RAGEVAL_INCLUDE_SYMBOLIC_JUDGE", False)
+
+    async def _fake_judge(self, answer, context, model):
+        return 0.1 if "claude" in model else 0.9
+
+    monkeypatch.setattr(RAGEvaluator, "_judge_groundedness", _fake_judge)
+    ev = RAGEvaluator()
+    result = asyncio.run(ev.score_groundedness_consensus("answer", "context"))
+    assert result["aggregation_strategy"] == "geometric_median"
+    assert result["consensus"] == pytest.approx(0.9)  # majority, not pulled toward 0.1
+
+
+def test_consensus_includes_symbolic_judge_when_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "JUDGE_MODELS", [
+        "anthropic/claude-haiku-4-5", "groq/openai/gpt-oss-120b",
+    ])
+    monkeypatch.setattr(settings, "RAGEVAL_INCLUDE_SYMBOLIC_JUDGE", True)
+
+    async def _fake_judge(self, answer, context, model):
+        return 0.8
+
+    monkeypatch.setattr(RAGEvaluator, "_judge_groundedness", _fake_judge)
+    ev = RAGEvaluator()
+    result = asyncio.run(ev.score_groundedness_consensus("The total was $100.", "The total was $100."))
+    assert result["symbolic_judge"] is not None
+    assert result["symbolic_judge"]["model"] == "symbolic/deterministic"
+    # judges_used counts only the LLM judges that responded, not the symbolic addition —
+    # keeps InsufficientJudgesError's quorum check meaning "LLM judges", unaffected by
+    # whether the symbolic judge happens to be enabled.
+    assert result["judges_used"] == 2
+
+
+def test_consensus_symbolic_judge_disabled_by_default(monkeypatch):
+    """Default behavior must be unchanged for anyone already running RAGeval — the
+    symbolic judge and geometric_median strategy are both opt-in."""
+    assert settings.RAGEVAL_INCLUDE_SYMBOLIC_JUDGE is False
+    assert settings.RAGEVAL_AGGREGATION_STRATEGY == "weighted_mean"
