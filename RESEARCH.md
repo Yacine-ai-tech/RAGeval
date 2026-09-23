@@ -47,21 +47,45 @@ RAGeval's design: no single-judge fallback, at least two independently configure
 scoring every query, and the consensus (plus the judges' disagreement/stdev) surfaced rather than
 collapsed into an opaque single number.
 
-**What a real N=200 run against this codebase's own aggregation actually found, and it's worth
-being direct about it:** RAGeval's consensus is now an accuracy-weighted mean (an earlier
-unweighted-mean version did not beat the strongest individual judge at all — see the benchmark
-doc's history). With weighting, consensus (0.860) recovers to match the second-best individual
-judge, but still does not beat the single strongest judge (Gemini 3.5 Flash, 0.885) outright (see
-the benchmark doc's Headline). The general literature's case for panels — that biases specific to
-one model are less likely to be shared across judges from different providers, so *some*
-aggregation should reduce that noise — holds up as a fault-tolerance and disagreement-signal
-argument, but weighted averaging alone does not yet make the panel outperform its best member on
-this dataset. The disagreement/stdev signal the panel produces still adds real value (see the
-benchmark doc), but the headline consensus *score* itself, even weighted, is not shown to beat
-picking the single strongest available judge. That's a genuine, measured limitation of the current
-design, not a hypothetical one — and the judge weights themselves are derived from accuracy
-measured on this same dataset, so the comparison isn't fully independent (also noted in the
-benchmark doc).
+**What a real N=200+ run against this codebase's own aggregation actually found, and it's worth
+being direct about it:** across every aggregation strategy tested — an unweighted mean, an
+accuracy-weighted mean, and a precision-weighted mean with a variance penalty — consensus
+consistently falls short of simply picking the single strongest available judge (Gemini 3.5
+Flash) outright (see the benchmark doc for the exact numbers). This is not a bug to keep
+patching the formula against; it is the expected, well-documented outcome of averaging when one
+judge is genuinely and consistently stronger than the others. Averaging is fundamentally a
+**variance-reduction** tool, not an **accuracy-maximization** one: it helps when judges' errors
+are independent noise around a similar bias, and it hurts when one judge is reliably better and
+the others are correlated in a different, weaker way — any point on the line between a strong
+judge and weaker ones is, definitionally, worse than the strong judge alone. Weighting shifts
+that point closer to the strong judge but never all the way to it, which is exactly the gap
+measured here (weighted consensus 0.838 vs. Gemini alone 0.854, on the 240-example rerun).
+
+A **cascade/escalation strategy** — trust the strongest judge by default, and only fall back to
+the full panel when that judge signals genuine uncertainty — was tested directly against the
+cached judge scores as the more literature-aligned alternative (production LLM-as-judge
+pipelines lean on cascades and confidence-based routing rather than blended scores; see
+[`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md#2026-landscape)). Two escalation signals were
+tried: (1) Gemini's own score being close to the decision threshold — this rarely triggered,
+since this task's per-judge scores are mostly confidently binary rather than continuous; (2)
+panel disagreement (judge-score standard deviation) — this *did* trigger on a real subset of
+cases, but escalating those disagreement cases to the panel mean measurably **hurt** accuracy
+rather than helping: Gemini stayed correct on 78.6% of the very cases where the other judges
+disagreed with it, so blending in their (comparatively weaker) verdicts pulled correct answers
+toward incorrect ones more often than it caught genuine Gemini errors. Every escalation-band
+setting tested matched or underperformed "trust Gemini unconditionally" on this dataset.
+
+The honest conclusion this supports: on this specific 3-judge lineup and dataset, the quality
+gap between Gemini and the other two judges is large and consistent enough that **no arithmetic
+combination of their scores — weighted, variance-penalized, or cascade-gated — beats using
+Gemini alone**. This matches the literature's guidance for panels with a large quality spread
+(drop the weaker members, or don't combine at all) rather than the guidance for panels of
+comparable-strength peers (where averaging or majority vote genuinely helps). The panel's
+disagreement/stdev signal remains real and useful — it correctly predicts where consensus
+(the blended score) is more likely to be wrong — but the tested evidence says to use it purely
+as a **human-review or stronger-judge escalation trigger**, never as an input folded back into
+the score itself. That's the one part of the original design that was already correct; the
+recommendation this testing changes is which score to report as the primary groundedness number.
 
 ## Persona/role-scoped evaluation: a distinctive angle, honestly scoped
 
@@ -109,13 +133,23 @@ these other frameworks for other axes of evaluation.
 Three extensions follow naturally from what's already implemented and measured, rather than
 being a departure from it:
 
-- **A stricter aggregation strategy.** Accuracy-weighted averaging is now implemented and
-  measured (see the benchmark doc) — it closes most but not all of the gap to the single best
-  judge, still falling short of it. A majority vote requiring minimum agreement, or weights
-  recalibrated on a held-out split rather than the same data being reported on, are natural next
-  things to test against the same labelled data — while keeping the properties (no single point
-  of failure, disagreement surfaced rather than hidden) that motivate using more than one judge
-  in the first place.
+- **Report the strongest judge as primary, not a blended consensus.** Three aggregation
+  strategies (unweighted mean, accuracy-weighted mean, disagreement-gated cascade) were tested
+  against the cached labelled data and all three underperform simply using the single strongest
+  judge (Gemini 3.5 Flash) — see above. The evidence-backed next step is not another blending
+  formula; it's changing what's reported as the headline groundedness score, while keeping the
+  full panel's disagreement signal as a review-escalation trigger (already implemented) rather
+  than a scoring input.
+- **A meta-judge / judge-of-judges.** Rather than combining scores arithmetically, a model (or a
+  small learned classifier) that reads every judge's verdict and rationale and decides can, in
+  principle, genuinely beat the best individual judge — because it performs real arbitration
+  instead of linear combination. This is a materially different mechanism from anything tested
+  so far and is the most promising untested direction.
+- **Calibration/stacking on held-out labels.** Weighting by raw accuracy (what's implemented
+  today) is a known-weak scheme in the classifier-ensembling literature this generalizes from;
+  weighting by each judge's calibrated per-case confidence, or training a small stacking model
+  on top of the judges' outputs against labeled data, is the academically better-supported
+  alternative — untested here for lack of a large enough held-out label set.
 - **A second, RAG-specific dataset.** HaluEval-QA is a general hallucination-detection
   benchmark, not one built around retrieval-augmented generation specifically. Adding RAGTruth
   (which does span-level hallucination annotation in RAG outputs) or a hand-labeled sample of
