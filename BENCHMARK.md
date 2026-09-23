@@ -62,6 +62,36 @@ judges' scores) was clearly higher on wrong consensus predictions than on correc
 
 ---
 
+## Rerun: Precision-Weighted Consensus with Variance Penalty (2026-09-23)
+
+A remediation was proposed to replace the plain accuracy-weighted mean above with a
+precision-weighted consensus that also subtracts a variance penalty when judges disagree:
+`score = Σ w_i · ŷ_i − λ · σ(ŷ)`, weights set to each judge's own measured accuracy.
+
+This was validated by recomputing over the cached per-judge scores already on disk
+(`eval/cache/halueval_200_cache.jsonl`) — no new judge calls, zero cost — on the largest
+internally-consistent judge lineup found in that cache: a **240-example, 3-judge** subset
+(Groq `gpt-oss-120b`, Gemini 3.5 Flash, GPT-5-mini; this particular cached run did not
+include the Claude Haiku judge, so it is a different slice from the 200-example, 4-judge
+table above, not a refinement of it).
+
+| Strategy | Accuracy | Precision | Recall | F1 | ROC-AUC | n |
+|---|---|---|---|---|---|---|
+| Plain accuracy-weighted mean (baseline) | 0.817 | — | — | 0.832 | 0.871 | 240 |
+| Best individual judge (Gemini 3.5 Flash) | **0.854** | — | — | — | — | 240 |
+| **Precision-weighted + variance penalty (λ=0.15–0.30)** | **0.838** | 0.805 | 0.892 | 0.846 | 0.871 | 240 |
+
+**Honest result:** the new formula is a real improvement over the plain mean (+2.1 points,
+0.817 → 0.838) and confirms the disagreement signal (mean judge-score stdev: 0.158 on wrong
+predictions vs. 0.026 on correct ones, an even sharper split than the 4-judge panel above).
+It does **not**, however, clear the originally proposed >0.895 target, and the panel still
+does not beat its single best member (Gemini, 0.854) on this subset — the same
+fault-tolerance argument made above for the 4-judge panel applies here too. A rerun with
+the full 4-judge lineup (rather than this 3-judge subset) is the natural next step once a
+clean, consistent 4-judge cache is collected.
+
+---
+
 ## Further Reading
 
 - [`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md) — full methodology, raw numbers,
