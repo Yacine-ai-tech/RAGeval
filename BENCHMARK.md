@@ -86,9 +86,39 @@ table above, not a refinement of it).
 predictions vs. 0.026 on correct ones, an even sharper split than the 4-judge panel above).
 It does **not**, however, clear the originally proposed >0.895 target, and the panel still
 does not beat its single best member (Gemini, 0.854) on this subset — the same
-fault-tolerance argument made above for the 4-judge panel applies here too. A rerun with
-the full 4-judge lineup (rather than this 3-judge subset) is the natural next step once a
-clean, consistent 4-judge cache is collected.
+fault-tolerance argument made above for the 4-judge panel applies here too.
+
+---
+
+## Rerun: Cascade/Escalation Strategy — Why Consensus Trails the Best Judge (2026-09-23)
+
+Rather than continue tuning the blending formula, a cascade/escalation strategy was tested —
+the pattern production LLM-as-judge pipelines actually lean on: trust the single strongest
+judge (Gemini 3.5 Flash) by default, and escalate to the full panel only on genuine
+uncertainty. Full reasoning in [`RESEARCH.md`](RESEARCH.md#why-multiple-judges-not-one).
+
+Two escalation signals were tested against the same cached 240-example, 3-judge subset:
+
+| Escalation signal | Cases escalated | Accuracy |
+|---|---|---|
+| Gemini alone, no escalation | 0 / 240 | **0.854** |
+| Escalate when Gemini's own score nears the 0.6 threshold | 0–2 / 240 (rarely triggers — scores are mostly confidently binary) | 0.854–0.858 |
+| Escalate when panel disagreement (stdev) exceeds a threshold | 21–33 / 240, depending on threshold | 0.817 (worse at every threshold that actually escalates) |
+
+**Finding: escalating to the panel on disagreement cases makes accuracy worse, not better.**
+On the specific 28 cases where the panel disagreed most (judge-score stdev > 0.15), Gemini
+alone was still correct **78.6%** of the time (22/28) — its edge over the other two judges is
+large and consistent enough that blending in their verdicts pulls more correct answers toward
+wrong ones than it catches genuine Gemini errors. Every escalation-band setting tested matched
+or underperformed simply trusting Gemini unconditionally.
+
+**Conclusion:** for this specific 3-judge lineup and dataset, no arithmetic combination of the
+judges' scores — plain mean, accuracy-weighted, variance-penalized, or disagreement-gated
+cascade — beats reporting Gemini's score directly. This is the documented, expected outcome
+when one judge in a panel is reliably stronger than the others (see `RESEARCH.md` for the
+full literature-grounded reasoning). The panel's disagreement signal remains genuinely useful
+as a **human-review escalation trigger** — it correctly flags where the blended score is more
+likely wrong — just not as an input folded back into a combined score.
 
 ---
 
