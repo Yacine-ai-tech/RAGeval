@@ -114,4 +114,8 @@ The AGPLv3 requires that any proprietary network service (SaaS, internal corpora
 
 ## Anonymous Telemetry
 
-RAGeval sends a single anonymous startup ping (a timestamp + a random, non-hardware-derived install ID — no API keys, prompts, or application data) so the maintainer can gauge usage. Disable it by setting `TELEMETRY_OPT_OUT=true` in your `.env`. See [TELEMETRY.md](TELEMETRY.md) for details.
+RAGeval sends a single anonymous startup ping, at most once per ~6 hours per running
+instance: a timestamp plus a randomly generated install ID (not derived from any
+hardware identifier) — no API keys, prompts, judge scores, or application data.
+Destination is the `TELEMETRY_URL` env var; set `TELEMETRY_OPT_OUT=true` in your `.env`
+to disable it outright (no request is made, not even a DNS lookup).

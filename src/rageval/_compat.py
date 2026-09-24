@@ -30,9 +30,11 @@ except Exception:  # pragma: no cover - read-only home, etc.
 _DEFAULT_JUDGE_MODELS = (
     "anthropic/claude-haiku-4-5-20251001,"
     "openai/gpt-5-mini,"
-    "gemini/gemini-2.5-flash,"
+    "gemini/gemini-3.6-flash,"
     "groq/openai/gpt-oss-120b"
 )
+# gemini-2.5-flash was retired by Google (404 on every call, confirmed live
+# 2026-09-24) — keep in sync with core/config.py.
 
 
 class _Settings:
