@@ -1,23 +1,15 @@
 # Benchmark Results
 
-This document provides a headline summary of RAGeval's multi-judge groundedness consensus
-validation on the HaluEval benchmark. All methodology details, full statistical results,
-and honest caveats are in [`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md) — that
-file is the single source of truth; this one is the entry point.
-
-> **Infrastructure / quota note.** An earlier attempt at this benchmark hit a free-tier
-> API quota ceiling, leaving two of four judges largely absent. This has been superseded
-> by a corrected rerun with all four judges answering every example — see
-> [`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md) for the full account.
+RAGeval's groundedness-judging component is evaluated against HaluEval-QA, a labeled
+hallucination-detection benchmark, comparing individual LLM judges against several methods of
+combining them into a consensus score. Full methodology and raw results:
+[`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md).
 
 ---
 
-## HaluEval-QA — N=200 Run, all 4 judges responding (100 questions × 2 labels each)
+## Individual Judges and Baseline Consensus (N=200)
 
-Reproducible: `python eval/run_judge_benchmark.py --n 100`
-(requires `ANTHROPIC_API_KEY` and/or `GROQ_API_KEY`, plus `datasets` and `scikit-learn`)
-
-### Per-judge / consensus results
+Reproducible via `python eval/run_judge_benchmark.py --n 100` (100 questions × 2 labels each).
 
 | Judge / Strategy | Accuracy | Precision | Recall | F1 | n |
 |---|---|---|---|---|---|
@@ -25,188 +17,123 @@ Reproducible: `python eval/run_judge_benchmark.py --n 100`
 | Groq `gpt-oss-120b` | 0.835 | 0.791 | 0.910 | 0.847 | 200 |
 | GPT-5-mini | 0.860 | 0.805 | 0.950 | 0.872 | 200 |
 | **Gemini 3.5 Flash** | **0.885** | 0.853 | 0.930 | 0.890 | 200 |
-| **Accuracy-weighted consensus (all 4)** | **0.860** | 0.827 | 0.910 | 0.867 | 200 |
+| Accuracy-weighted consensus (all four) | 0.860 | 0.827 | 0.910 | 0.867 | 200 |
 
-**ROC-AUC (consensus score): 0.902** — the raw consensus score separates grounded from
-hallucinated answers well, independent of where the 0.6 decision threshold is drawn.
+Consensus ROC-AUC: 0.902 — the raw consensus score separates grounded from hallucinated
+answers well, independent of the decision threshold.
 
----
-
-## What Actually Responded
-
-This run was executed with all four judge keys populated and no quota exhaustion:
-every judge (Claude Haiku 4.5, Groq `gpt-oss-120b`, GPT-5-mini, Gemini 3.5 Flash)
-answered all 200 examples. A prior attempt at this benchmark had two of four judges
-largely absent due to a free-tier quota ceiling — that run has been superseded by this
-one; see [`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md) for that history.
-
----
-
-## Key Finding
-
-**Stated plainly:** with the full 4-judge panel responding, the accuracy-weighted
-consensus (0.860) matches the second-best individual judge (GPT-5-mini, 0.860) and is
-edged out only by the single strongest judge, Gemini 3.5 Flash (0.885). Weighting each
-judge by its own measured accuracy keeps the weakest judge (Claude Haiku 4.5, 0.750)
-from dragging the consensus down as far as a plain unweighted mean would — but the
-panel still does not beat its best individual member outright on this dataset.
-
-The practical case for the panel isn't "highest possible accuracy" — it's fault
-tolerance (a usable score if any one judge is unavailable) plus the disagreement
-signal below, which no single judge can provide on its own.
-
-**Judge disagreement as an error signal:** mean disagreement (stdev across the 4
-judges' scores) was clearly higher on wrong consensus predictions than on correct ones
-(0.217 vs 0.082, n=28 wrong / 172 correct) — a real, useful signal for the
-`flag_for_review` heuristic.
+**Result.** With all four judges responding, the accuracy-weighted consensus (0.860) matches
+the second-strongest individual judge and trails the single strongest judge, Gemini 3.5 Flash
+(0.885). Weighting each judge by its own measured accuracy keeps the weakest judge from
+dragging the consensus down as far as an unweighted mean would, but the panel does not exceed
+its strongest individual member on this dataset. Judge disagreement (standard deviation across
+the four scores) is a useful secondary signal independent of this: it measures 0.217 on
+incorrect consensus predictions versus 0.082 on correct ones (n = 28 incorrect, 172 correct),
+supporting its use as a review-flagging heuristic even where it does not improve the blended
+score itself.
 
 ---
 
-## Rerun: Precision-Weighted Consensus with Variance Penalty (2026-09-23)
+## Alternative Consensus Strategies (N=240, three-judge subset)
 
-A remediation was proposed to replace the plain accuracy-weighted mean above with a
-precision-weighted consensus that also subtracts a variance penalty when judges disagree:
-`score = Σ w_i · ŷ_i − λ · σ(ŷ)`, weights set to each judge's own measured accuracy.
+Four additional aggregation strategies were evaluated on a 240-example subset (Groq
+`gpt-oss-120b`, Gemini 3.5 Flash, GPT-5-mini) to test whether a different combining formula
+closes the gap to the single strongest judge.
 
-This was validated by recomputing over the cached per-judge scores already on disk
-(`eval/cache/halueval_200_cache.jsonl`) — no new judge calls, zero cost — on the largest
-internally-consistent judge lineup found in that cache: a **240-example, 3-judge** subset
-(Groq `gpt-oss-120b`, Gemini 3.5 Flash, GPT-5-mini; this particular cached run did not
-include the Claude Haiku judge, so it is a different slice from the 200-example, 4-judge
-table above, not a refinement of it).
+| Strategy | Accuracy | F1 | ROC-AUC | n |
+|---|---|---|---|---|
+| Best individual judge (Gemini 3.5 Flash) | **0.854** | — | — | 240 |
+| Unweighted mean | 0.817 | 0.832 | 0.871 | 240 |
+| Precision-weighted mean with variance penalty | 0.838 | 0.846 | 0.871 | 240 |
+| Geometric median (weighted median, scalar case) | 0.817 | — | 0.826 | 240 |
+| Escalation cascade (panel disagreement as trigger) | 0.817 | — | — | 240 |
 
-| Strategy | Accuracy | Precision | Recall | F1 | ROC-AUC | n |
-|---|---|---|---|---|---|---|
-| Plain accuracy-weighted mean (baseline) | 0.817 | — | — | 0.832 | 0.871 | 240 |
-| Best individual judge (Gemini 3.5 Flash) | **0.854** | — | — | — | — | 240 |
-| **Precision-weighted + variance penalty (λ=0.15–0.30)** | **0.838** | 0.805 | 0.892 | 0.846 | 0.871 | 240 |
+**Precision-weighted consensus with a variance penalty** (`score = Σ wᵢ·ŷᵢ − λ·σ(ŷ)`, weights
+set to each judge's measured accuracy) improves on the unweighted mean by 2.1 points (0.817 →
+0.838) and sharpens the disagreement-as-error-signal relationship further (judge-score standard
+deviation of 0.158 on incorrect predictions versus 0.026 on correct ones). It does not exceed
+Gemini alone.
 
-**Honest result:** the new formula is a real improvement over the plain mean (+2.1 points,
-0.817 → 0.838) and confirms the disagreement signal (mean judge-score stdev: 0.158 on wrong
-predictions vs. 0.026 on correct ones, an even sharper split than the 4-judge panel above).
-It does **not**, however, clear the originally proposed >0.895 target, and the panel still
-does not beat its single best member (Gemini, 0.854) on this subset — the same
-fault-tolerance argument made above for the 4-judge panel applies here too.
+**Geometric median**, a breakdown-point-1/2 robust alternative to the mean (RoPoLL, Acharya et
+al. 2026), does not close the gap either — consistent with the "Nine Judges, Two Effective
+Votes" (Kohli, 2026) finding that this class of gap reflects correlation among same-genre LLM
+judges rather than a weakness in the combining formula.
 
----
+**Escalation cascade** — trusting Gemini by default and escalating to the full panel only on
+signaled uncertainty — was tested against two escalation triggers. Escalating when Gemini's
+own score approaches the decision threshold rarely fires, since per-judge scores on this task
+are mostly confidently binary. Escalating on panel disagreement fires on 21–33 of 240 cases
+depending on threshold, and reduces accuracy to 0.817 at every threshold tested: on the 28
+cases where the panel disagreed most, Gemini alone remained correct 78.6% of the time (22/28),
+so blending in the other judges' comparatively weaker verdicts moved more correct answers
+toward incorrect than it corrected genuine Gemini errors.
 
-## Rerun: Cascade/Escalation Strategy — Why Consensus Trails the Best Judge (2026-09-23)
-
-Rather than continue tuning the blending formula, a cascade/escalation strategy was tested —
-the pattern production LLM-as-judge pipelines actually lean on: trust the single strongest
-judge (Gemini 3.5 Flash) by default, and escalate to the full panel only on genuine
-uncertainty. Full reasoning in [`RESEARCH.md`](RESEARCH.md#why-multiple-judges-not-one).
-
-Two escalation signals were tested against the same cached 240-example, 3-judge subset:
-
-| Escalation signal | Cases escalated | Accuracy |
-|---|---|---|
-| Gemini alone, no escalation | 0 / 240 | **0.854** |
-| Escalate when Gemini's own score nears the 0.6 threshold | 0–2 / 240 (rarely triggers — scores are mostly confidently binary) | 0.854–0.858 |
-| Escalate when panel disagreement (stdev) exceeds a threshold | 21–33 / 240, depending on threshold | 0.817 (worse at every threshold that actually escalates) |
-
-**Finding: escalating to the panel on disagreement cases makes accuracy worse, not better.**
-On the specific 28 cases where the panel disagreed most (judge-score stdev > 0.15), Gemini
-alone was still correct **78.6%** of the time (22/28) — its edge over the other two judges is
-large and consistent enough that blending in their verdicts pulls more correct answers toward
-wrong ones than it catches genuine Gemini errors. Every escalation-band setting tested matched
-or underperformed simply trusting Gemini unconditionally.
-
-**Conclusion:** for this specific 3-judge lineup and dataset, no arithmetic combination of the
-judges' scores — plain mean, accuracy-weighted, variance-penalized, or disagreement-gated
-cascade — beats reporting Gemini's score directly. This is the documented, expected outcome
-when one judge in a panel is reliably stronger than the others (see `RESEARCH.md` for the
-full literature-grounded reasoning). The panel's disagreement signal remains genuinely useful
-as a **human-review escalation trigger** — it correctly flags where the blended score is more
-likely wrong — just not as an input folded back into a combined score.
+**Across every strategy tested** — unweighted mean, accuracy-weighted mean, precision-weighted
+mean with a variance penalty, geometric median, and disagreement-gated escalation — none
+exceeds the single strongest judge's accuracy on this dataset. This is the documented, expected
+outcome when one judge in a panel is reliably stronger than the others; see
+[RESEARCH.md](RESEARCH.md) for the supporting literature. The panel's disagreement signal
+remains useful as a human-review escalation trigger independent of this result.
 
 ---
 
-## Rerun: Geometric Median and a Heterogeneous (Non-LLM) Judge (2026-09-23)
+## Heterogeneous (Non-LLM) Judge and Geometric Median
 
-Two literature-backed alternatives were implemented as opt-in aggregation strategies (see
-`RESEARCH.md` for the full literature review and why both default off) and measured against
-the same 240-example, 3-judge cached subset used above.
-
-**Geometric median** (RoPoLL, Acharya et al. 2026 — reduces to the classical weighted median
-for RAGeval's scalar-score case): a tuning-free, breakdown-point-1/2 robust replacement for
-the weighted mean.
-
-**Symbolic/deterministic judge** (`score_symbolic_groundedness`, Independence-Aware
-Heterogeneous Evaluation): a $0, non-LLM verification signal — numeric-fact consistency
-(does every number the answer states appear in the retrieved context?) plus lexical overlap
-— added as a structurally independent 4th panel member.
+A deterministic, non-LLM verification signal — numeric-fact consistency between the answer and
+retrieved context, plus lexical overlap (`score_symbolic_groundedness`) — was added as a
+structurally independent panel member, on the same 240-example subset.
 
 | Configuration | Accuracy | ROC-AUC |
 |---|---|---|
-| Gemini alone (reference) | **0.8542** | — |
-| Weighted mean, 3 LLM judges (baseline) | 0.8167 | 0.8709 |
+| Gemini alone (reference) | 0.8542 | — |
+| Weighted mean, three LLM judges | 0.8167 | 0.8709 |
 | Weighted mean + symbolic judge | 0.8208 | **0.9191** |
-| Geometric median, 3 LLM judges | 0.8167 | 0.8256 |
+| Geometric median, three LLM judges | 0.8167 | 0.8256 |
 | Geometric median + symbolic judge | 0.8167 | 0.8256 |
 | Symbolic judge alone | 0.5625 | — |
 
-**Findings:**
-- **Geometric median does not close the gap to Gemini alone** — confirming, on this
-  dataset, the "Nine Judges, Two Effective Votes" (Kohli, 2026) claim that this is a
-  correlated-judges ceiling rather than a combining-formula problem: a more robust formula
-  over the *same* correlated judges still can't out-perform the strongest one.
-- **The symbolic judge alone is weak** (0.5625) — HaluEval-QA's hallucinations are mostly
-  invented facts/entities, not wrong numbers, so a numeric-consistency check has limited
-  reach on this particular dataset.
-- **But folding it into the weighted-mean panel meaningfully improves ROC-AUC** (0.8709 →
-  0.9191) — a real, structural gain from adding a genuinely uncorrelated signal, distinct
-  from anything the same-genre reweighting/cascade experiments above achieved. Raw
-  accuracy-at-threshold barely moves and still trails Gemini alone, so this is a partial,
-  honest result: real evidence that heterogeneous verification helps, not yet enough to
-  change which score should be reported as primary.
+The symbolic judge alone is weak (0.5625 accuracy) — HaluEval-QA's hallucinations are
+predominantly invented facts and entities rather than numeric errors, limiting a
+numeric-consistency check's reach on this dataset. Folded into the weighted-mean panel,
+however, it raises ROC-AUC from 0.8709 to 0.9191 — a structural improvement in how well the
+blended score ranks grounded versus hallucinated answers, from a genuinely uncorrelated
+signal rather than a recombination of the same three correlated judges. Accuracy at the fixed
+threshold does not move past Gemini alone.
 
-**Both are shipped as opt-in, not new defaults** (`RAGEVAL_AGGREGATION_STRATEGY=
-geometric_median`, `RAGEVAL_INCLUDE_SYMBOLIC_JUDGE=true`) — turning either on changes every
-existing deployment's consensus number, which shouldn't happen silently on an upgrade.
+Both the geometric-median strategy and the symbolic judge are opt-in
+(`RAGEVAL_AGGREGATION_STRATEGY=geometric_median`, `RAGEVAL_INCLUDE_SYMBOLIC_JUDGE=true`), not
+defaults, so adopting either is a deliberate choice for existing deployments rather than a
+change on upgrade.
 
 ---
 
-## Rerun: Meta-Judge / Arbiter Panel, N=53 (2026-09-24)
+## Meta-Judge / Arbiter Panel (N=53)
 
-Every strategy above combines judge scores with a fixed formula (mean, weighted mean,
-geometric median). The one mechanism not yet tested was letting a model arbitrate:
-Groq and Gemini each independently score groundedness with a one-sentence rationale, then
-a **third**, independent Groq call is given both scores and rationales — plus the original
-answer/context — and produces its own final verdict, free to agree with either, both, or
-neither.
-
-**Live, Groq-direct + Gemini-direct (Claude excluded, per the standing wait-for-Lightning-
-credits constraint), HaluEval-QA, N=53** (a first N=26 pass showed a promising edge for the
-arbiter; this is the N≥50 confirmation run):
+The strategies above each combine judge scores with a fixed formula. A fifth mechanism —
+model arbitration rather than formula combination — was evaluated on HaluEval-QA using Groq
+and Gemini directly: each independently scores groundedness with a rationale, then a third,
+independent model call is given both scores and rationales, plus the original answer and
+context, and produces its own final verdict.
 
 | Score | Accuracy | F1 | ROC-AUC |
 |---|---|---|---|
 | Groq alone (best single judge) | **0.8868** | **0.8966** | **0.9174** |
 | Gemini alone | 0.8113 | 0.8214 | 0.8105 |
-| Naive mean (Groq, Gemini) | 0.8113 | 0.8214 | 0.9003 |
-| **Arbiter (third Groq call, sees both judges' verdicts)** | 0.8868 | 0.8966 | 0.8846 |
+| Unweighted mean (Groq, Gemini) | 0.8113 | 0.8214 | 0.9003 |
+| Arbiter (third call, sees both judges' verdicts) | 0.8868 | 0.8966 | 0.8846 |
 
-**Finding: the arbiter does not outperform the single best judge at this sample size.** It
-ties Groq exactly on accuracy and F1 (same predictions at the 0.6 threshold), and its
-ROC-AUC (0.8846) is *lower* than Groq alone (0.9174) — and lower than the naive mean's
-ROC-AUC (0.9003). The N=26 pass's apparent edge (arbiter 0.8846 vs. best-single-judge 0.8462)
-did not replicate at N=53; it reads as a small-sample fluctuation, not a real effect. This is
-the fourth aggregation strategy tested (weighted mean, geometric median, symbolic-augmented
-panel, now arbitration) that fails to beat the single strongest judge on this dataset — the
-result is consistent with "Nine Judges, Two Effective Votes" (Kohli, 2026): the ceiling looks
-like judge correlation, not the combining mechanism, and a *smarter* combiner (an LLM
-arbitrating, not just a formula) doesn't escape it either.
-
-Reproduce: Groq direct + Gemini direct, temperature 0, structured `SCORE:`/`RATIONALE:`
-prompts for both judges and the arbiter, with per-provider API-key rotation on rate limits
-(the rotation harness itself is local orchestration tooling, not committed to this repo).
+The arbiter matches Groq exactly on accuracy and F1, and trails it on ROC-AUC (0.8846 versus
+0.9174) — also below the two-judge mean's ROC-AUC (0.9003). This is the fifth combination
+mechanism tested — following unweighted mean, weighted mean with a variance penalty,
+geometric median, and a heterogeneous symbolic panel member — that does not exceed the single
+strongest judge's raw accuracy on this dataset, consistent with the correlated-judges
+explanation cited above.
 
 ---
 
 ## Further Reading
 
 - [`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md) — full methodology, raw numbers,
-  bootstrap CIs, 2026 landscape context, and concrete next steps
-- [`RESEARCH.md`](RESEARCH.md) — why multiple judges, why LLM-as-judge, and where
-  RAGeval sits relative to RAGAS, ARES, TruLens, and the broader evaluation landscape
+  bootstrap confidence intervals, and the 2026 judge-panel literature landscape
+- [`RESEARCH.md`](RESEARCH.md) — the case for LLM-as-judge and multi-judge panels, and how
+  RAGeval relates to RAGAS, ARES, TruLens, and the broader evaluation landscape
