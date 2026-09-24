@@ -27,9 +27,15 @@ RAGEVAL_HOME.mkdir(parents=True, exist_ok=True)
 _DEFAULT_JUDGE_MODELS = (
     "anthropic/claude-haiku-4-5-20251001,"
     "openai/gpt-5-mini,"
-    "gemini/gemini-2.5-flash,"
+    "gemini/gemini-3.6-flash,"
     "groq/openai/gpt-oss-120b"
 )
+# gemini-2.5-flash was retired by Google ("no longer available to new users" as of
+# 2026-09-24, confirmed live: a 404 on every call) -- found while live-testing a new
+# meta-judge arbiter, not by anyone noticing the production panel silently lost a
+# judge. Since the panel degrades gracefully (MIN_JUDGES_REQUIRED), this had been
+# failing quietly rather than loudly -- worth a real health check on judge models,
+# not just a fix, as future work.
 
 
 class Settings:
