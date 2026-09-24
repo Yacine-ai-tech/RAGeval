@@ -111,7 +111,7 @@ Because RAGeval ships as a standard container (a `Dockerfile` producing a single
 both the API and, via the same origin, the built frontend), it's portable across most container
 hosting options. A few interchangeable examples of where you could run it:
 
-- **A managed container platform** (e.g. Fly.io, Railway, or similar) — point it at the `Dockerfile`
+- **A managed container platform** (e.g. Fly.io, Render, or similar) — point it at the `Dockerfile`
   and set your `.env` values as platform environment variables. Most of these platforms inject
   their own `$PORT`, which the Dockerfile already honors (`--port ${PORT:-8003}`).
 - **A plain VPS** — run the Docker image directly (`docker run`) or via `docker compose`, behind
