@@ -152,6 +152,24 @@ are exposed as environment-variable-gated strategies (`RAGEVAL_AGGREGATION_STRAT
 `RAGEVAL_INCLUDE_SYMBOLIC_JUDGE`) precisely so adopting them is a deliberate choice, not
 a silent one.
 
+**A fourth strategy, tested and also negative: letting a model arbitrate rather than a
+formula combine.** Every strategy above is a fixed function of the judge scores. The
+remaining untested mechanism was a genuine third opinion: Groq and Gemini score
+independently, then a third, independent Groq call sees both scores *and* rationales
+plus the original answer/context, and reaches its own verdict — free to override either
+judge, not just average them. Measured on HaluEval-QA, N=53 (live, Groq-direct +
+Gemini-direct): the arbiter ties the single best judge (Groq alone) exactly on accuracy
+(0.8868) and F1 (0.8966), and trails it on ROC-AUC (0.8846 vs. 0.9174) — worse, even, than
+the naive two-judge mean's ROC-AUC (0.9003). A smaller N=26 pass had shown an apparent edge
+for the arbiter (0.8846 vs. 0.8462); it did not replicate at N=53 and is best read as a
+small-sample fluctuation. Full numbers: `BENCHMARK.md`'s "Meta-Judge / Arbiter Panel"
+section. Taken with the results above, this is now four different combination
+mechanisms — weighted mean, geometric median, a heterogeneous symbolic panel member, and
+LLM arbitration — none of which beats the single strongest judge on raw
+accuracy/F1 on this dataset. That consistency across genuinely different mechanisms is
+itself evidence for "Nine Judges, Two Effective Votes"'s claim: the ceiling is the judges'
+shared correlation structure, not a deficiency in any one way of combining them.
+
 ## Persona/role-scoped evaluation: a distinctive angle, honestly scoped
 
 Beyond groundedness and faithfulness, RAGeval flags when a persona-scoped answer surfaces
