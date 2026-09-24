@@ -167,6 +167,43 @@ existing deployment's consensus number, which shouldn't happen silently on an up
 
 ---
 
+## Rerun: Meta-Judge / Arbiter Panel, N=53 (2026-09-24)
+
+Every strategy above combines judge scores with a fixed formula (mean, weighted mean,
+geometric median). The one mechanism not yet tested was letting a model arbitrate:
+Groq and Gemini each independently score groundedness with a one-sentence rationale, then
+a **third**, independent Groq call is given both scores and rationales — plus the original
+answer/context — and produces its own final verdict, free to agree with either, both, or
+neither.
+
+**Live, Groq-direct + Gemini-direct (Claude excluded, per the standing wait-for-Lightning-
+credits constraint), HaluEval-QA, N=53** (a first N=26 pass showed a promising edge for the
+arbiter; this is the N≥50 confirmation run):
+
+| Score | Accuracy | F1 | ROC-AUC |
+|---|---|---|---|
+| Groq alone (best single judge) | **0.8868** | **0.8966** | **0.9174** |
+| Gemini alone | 0.8113 | 0.8214 | 0.8105 |
+| Naive mean (Groq, Gemini) | 0.8113 | 0.8214 | 0.9003 |
+| **Arbiter (third Groq call, sees both judges' verdicts)** | 0.8868 | 0.8966 | 0.8846 |
+
+**Finding: the arbiter does not outperform the single best judge at this sample size.** It
+ties Groq exactly on accuracy and F1 (same predictions at the 0.6 threshold), and its
+ROC-AUC (0.8846) is *lower* than Groq alone (0.9174) — and lower than the naive mean's
+ROC-AUC (0.9003). The N=26 pass's apparent edge (arbiter 0.8846 vs. best-single-judge 0.8462)
+did not replicate at N=53; it reads as a small-sample fluctuation, not a real effect. This is
+the fourth aggregation strategy tested (weighted mean, geometric median, symbolic-augmented
+panel, now arbitration) that fails to beat the single strongest judge on this dataset — the
+result is consistent with "Nine Judges, Two Effective Votes" (Kohli, 2026): the ceiling looks
+like judge correlation, not the combining mechanism, and a *smarter* combiner (an LLM
+arbitrating, not just a formula) doesn't escape it either.
+
+Reproduce: Groq direct + Gemini direct, temperature 0, structured `SCORE:`/`RATIONALE:`
+prompts for both judges and the arbiter, with per-provider API-key rotation on rate limits
+(the rotation harness itself is local orchestration tooling, not committed to this repo).
+
+---
+
 ## Further Reading
 
 - [`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md) — full methodology, raw numbers,
