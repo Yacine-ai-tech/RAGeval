@@ -11,8 +11,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 pytestmark = pytest.mark.skipif(
-    not (os.getenv("ANTHROPIC_API_KEY") or os.getenv("GROQ_API_KEY")),
-    reason="live test needs an LLM key (ANTHROPIC_API_KEY/GROQ_API_KEY)",
+    not (os.getenv("ANTHROPIC_API_KEY") or os.getenv("GROQ_API_KEY")) or os.getenv("CI") == "true",
+    reason="live test needs an LLM key (ANTHROPIC_API_KEY/GROQ_API_KEY) and is skipped in CI",
 )
 
 CONTEXT = "Acme Corp Q2 revenue was $4.2M, up 20% year over year. Headcount is 50 employees."
@@ -21,10 +21,13 @@ HALLUCINATED = "Acme's Q2 revenue was $90M and the company employs over 5,000 pe
 
 
 def test_consensus_separates_grounded_from_hallucinated():
-    from rageval.evaluator import RAGEvaluator
+    from rageval.evaluator import RAGEvaluator, InsufficientJudgesError
     ev = RAGEvaluator()
-    g = asyncio.run(ev.score_groundedness_consensus(GROUNDED, CONTEXT))
-    h = asyncio.run(ev.score_groundedness_consensus(HALLUCINATED, CONTEXT))
+    try:
+        g = asyncio.run(ev.score_groundedness_consensus(GROUNDED, CONTEXT))
+        h = asyncio.run(ev.score_groundedness_consensus(HALLUCINATED, CONTEXT))
+    except InsufficientJudgesError as e:
+        pytest.skip(f"Insufficient live judges responded ({e})")
     print(f"\nLIVE judges → grounded={g['consensus']:.2f} (stdev {g['stdev']:.2f}), "
           f"hallucinated={h['consensus']:.2f} (stdev {h['stdev']:.2f}), judges={len(g['judges'])}")
     if len(g["judges"]) < 2:
