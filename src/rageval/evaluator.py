@@ -71,6 +71,8 @@ OPENAI_PRICES = {
     "openai/gpt-5-mini": (0.15, 0.60),
 }
 GEMINI_PRICES = {
+    "gemini/gemini-3.6-flash": (0.15, 0.60),
+    "gemini/gemini-flash-latest": (0.15, 0.60),
     "gemini/gemini-2.5-flash": (0.15, 0.60),
     "gemini/gemini-1.5-flash": (0.075, 0.30),
     "gemini/gemini-1.5-pro": (1.25, 5.00),
