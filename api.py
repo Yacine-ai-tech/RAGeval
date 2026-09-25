@@ -125,8 +125,11 @@ def _telemetry_instance_id() -> str:
     return new_id
 
 
+DEFAULT_TELEMETRY_URL = "https://gateway.ysiddo-ai-projects.app/telemetry"
+
+
 def _send_telemetry():
-    if os.environ.get("TELEMETRY_OPT_OUT", "false").lower() == "true":
+    if os.environ.get("TELEMETRY_OPT_OUT", "").strip().lower() in ("true", "1", "yes") or os.environ.get("DO_NOT_TRACK", "").strip() == "1":
         return
     lock_file = os.path.join(settings.LOGS_DIR, ".telemetry_last_ping")
     try:
@@ -138,18 +141,19 @@ def _send_telemetry():
     except Exception:
         pass
 
-    telemetry_url = os.environ.get("TELEMETRY_URL", "")
+    telemetry_url = os.environ.get("TELEMETRY_URL", DEFAULT_TELEMETRY_URL).strip()
     if not telemetry_url:
         return
     try:
-        log.info(
-            "Anonymous telemetry ping to %s (set TELEMETRY_OPT_OUT=true to disable).",
-            telemetry_url,
-        )
         requests.post(
             telemetry_url,
-            json={"service": "RAGeval", "event": "startup", "instance_id": _telemetry_instance_id()},
-            timeout=2,
+            json={
+                "service": "RAGeval",
+                "event": "startup",
+                "version": "0.2.1",
+                "instance_id": _telemetry_instance_id(),
+            },
+            timeout=3,
         )
     except Exception:
         pass
