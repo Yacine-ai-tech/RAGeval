@@ -405,6 +405,8 @@ class RAGEvaluator:
         else:
             if not _LITELLM:
                 return None
+            _auth_signals = ("AuthenticationError", "PermissionDeniedError", "401", "403",
+                             "invalid_api_key", "invalid api key")
             try:
                 resp = await asyncio.wait_for(
                     acompletion(
@@ -416,11 +418,31 @@ class RAGEvaluator:
                 )
                 content = (resp.choices[0].message.content or "").strip()
             except Exception as e:
-                log.warning(
-                    "judge %s unavailable (skipped): %s: %s",
-                    model, type(e).__name__, e or "<no detail>",
-                )
-                return None
+                is_auth = any(s.lower() in str(e).lower() or s.lower() in type(e).__name__.lower()
+                              for s in _auth_signals)
+                fallback_model = os.getenv("LLM_JUDGE_FALLBACK", "")
+                if is_auth and fallback_model and fallback_model != model:
+                    log.warning("judge %s auth failed — retrying with fallback %s", model, fallback_model)
+                    try:
+                        resp = await asyncio.wait_for(
+                            acompletion(
+                                model=fallback_model,
+                                messages=[{"role": "user", "content": prompt}],
+                                temperature=0.0,
+                            ),
+                            timeout=judge_timeout,
+                        )
+                        content = (resp.choices[0].message.content or "").strip()
+                    except Exception as fb_e:
+                        log.warning("judge fallback %s also unavailable (skipped): %s: %s",
+                                    fallback_model, type(fb_e).__name__, fb_e or "<no detail>")
+                        return None
+                else:
+                    log.warning(
+                        "judge %s unavailable (skipped): %s: %s",
+                        model, type(e).__name__, e or "<no detail>",
+                    )
+                    return None
 
         # Parse the score — strip the prompt's own wording before scanning for a number
         import re
