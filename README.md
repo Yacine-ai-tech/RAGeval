@@ -3,15 +3,21 @@
 [![CI](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml/badge.svg)](https://github.com/Yacine-ai-tech/RAGeval/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/omnismart-rageval.svg)](https://pypi.org/project/omnismart-rageval/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Live App](https://img.shields.io/badge/Live_App-rageval--ui-0070f3?style=flat&logo=vercel)](https://rageval-ui-2026.vercel.app)
+[![Research](https://img.shields.io/badge/Research-Heterogeneous_Panel-8a2be2?style=flat)](https://rageval-ui-2026.vercel.app/research)
+[![Benchmarks](https://img.shields.io/badge/Benchmarks-ROC--AUC_0.9191-green?style=flat)](https://rageval-ui-2026.vercel.app/benchmarks)
+[![Guide](https://img.shields.io/badge/Docs-User_Guide-blue?style=flat)](https://rageval-ui-2026.vercel.app/guide)
 
 **Self-hosted LLMOps observability for RAG pipelines, with multi-judge consensus scoring,
 persona-scope detection, and a drop-in Python decorator.**
 
 `pip install omnismart-rageval` (v0.2.1)
 
-**Live demo:** https://rageval.ysiddo-ai-projects.app/ — score a query and inspect metrics
-directly in the browser dashboard, or drive the same functionality via the `/eval/*` API.
-Self-hosting instructions: [SELF_HOSTING.md](SELF_HOSTING.md).
+**Live Application:** [rageval-ui-2026.vercel.app](https://rageval-ui-2026.vercel.app) (also accessible at [rageval.ysiddo-ai-projects.app](https://rageval.ysiddo-ai-projects.app)) — score queries and inspect real-time consensus telemetry.
+- **Research Background:** [`RESEARCH.md`](RESEARCH.md) / [Online Research Documentation](https://rageval-ui-2026.vercel.app/research)
+- **Empirical Benchmarks:** [`BENCHMARK.md`](BENCHMARK.md) / [Online Benchmark Dashboard](https://rageval-ui-2026.vercel.app/benchmarks)
+- **User Guide:** [Online User Guide](https://rageval-ui-2026.vercel.app/guide)
+- **Self-Hosting Guide:** [`SELF_HOSTING.md`](SELF_HOSTING.md)
 
 ## Overview
 
