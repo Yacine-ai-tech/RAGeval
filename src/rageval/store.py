@@ -90,15 +90,56 @@ def _db_path() -> str:
         os.makedirs(parent, exist_ok=True)
     return path
 
+_pg_pool = None
+_pg_pool_lock = None
+
+def _get_pooler_url(url: str) -> str:
+    """Enforce Neon PgBouncer -pooler endpoint to eliminate TCP/TLS handshake latency."""
+    if not url or "-pooler" in url or "neon.tech" not in url:
+        return url
+    import re
+    return re.sub(r'(@ep-[a-z0-9-]+)(\.[a-z0-9-.]*neon\.tech)', r'\1-pooler\2', url)
+
+def _get_pg_pool():
+    global _pg_pool, _pg_pool_lock
+    if _pg_pool is not None:
+        return _pg_pool
+    import threading
+    if _pg_pool_lock is None:
+        _pg_pool_lock = threading.Lock()
+    with _pg_pool_lock:
+        if _pg_pool is not None:
+            return _pg_pool
+        try:
+            import psycopg2.pool
+            pool_url = _get_pooler_url(settings.POSTGRES_URL)
+            _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=2,
+                maxconn=10,
+                dsn=pool_url,
+                connect_timeout=10,
+            )
+            log.info("RAGeval Postgres connection pool initialized (min=2, max=10)")
+        except Exception as e:
+            log.warning("Postgres pool initialization failed (%s); using direct connect", e)
+            _pg_pool = False
+    return _pg_pool
+
 def _execute(sql: str, params: tuple = (), fetchall: bool = False, is_script: bool = False, _retries: int = 3):
     is_pg = bool(settings.POSTGRES_URL)
     conn = None
     cur = None
+    from_pool = False
     try:
         if is_pg:
             import psycopg2
             import psycopg2.extras
-            conn = psycopg2.connect(settings.POSTGRES_URL)
+            pool = _get_pg_pool()
+            if pool and pool is not False:
+                conn = pool.getconn()
+                from_pool = True
+            else:
+                conn = psycopg2.connect(_get_pooler_url(settings.POSTGRES_URL), connect_timeout=10)
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
             if not is_script:
                 sql = sql.replace('?', '%s')
@@ -122,6 +163,11 @@ def _execute(sql: str, params: tuple = (), fetchall: bool = False, is_script: bo
         conn.commit()
         return res
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         if _retries > 0 and is_pg:
             import psycopg2
             if isinstance(e, psycopg2.OperationalError):
@@ -130,8 +176,22 @@ def _execute(sql: str, params: tuple = (), fetchall: bool = False, is_script: bo
                 return _execute(sql, params, fetchall, is_script, _retries - 1)
         raise e
     finally:
-        if cur: cur.close()
-        if conn: conn.close()
+        if cur:
+            try:
+                cur.close()
+            except Exception:
+                pass
+        if conn:
+            if is_pg and from_pool and _pg_pool and _pg_pool is not False:
+                try:
+                    _pg_pool.putconn(conn)
+                except Exception:
+                    pass
+            else:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
 def init_rageval_table() -> None:
     """Initialize the rageval_log table (idempotent)."""
