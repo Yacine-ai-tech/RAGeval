@@ -234,6 +234,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 # ─── Static assets ────────────────────────────────────────────────────────────
 
 try:
