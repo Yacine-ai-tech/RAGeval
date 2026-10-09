@@ -406,21 +406,21 @@ def _resolve_session_id(request: Request, body_session_id: Optional[str] = None)
     """A visitor's own browser sends X-Demo-Session-Id (set by the frontend); that takes
     precedence since it can't be spoofed by a request body field. Admin token is strictly required
     for platform-wide visibility for Omni-Admin."""
-    admin_token = (
-        request.headers.get("X-Admin-Token")
-        or request.headers.get("X-RAGeval-Internal-Token")
-        or request.headers.get("X-Rageval-Internal-Token")
-    )
-    admin_secret = os.getenv("ADMIN_TOKEN") or os.getenv("RAGEVAL_INTERNAL_TOKEN")
+    admin_token = request.headers.get("X-Admin-Token")
+    admin_secret = os.getenv("ADMIN_TOKEN")
     is_admin = bool(admin_token and admin_secret and admin_token == admin_secret)
     if is_admin:
         return "*"
-    header_session = request.headers.get("X-Demo-Session-Id") or request.headers.get("X-Session-Id")
+    header_session = (
+        request.headers.get("X-Demo-Session-Id")
+        or request.headers.get("X-Session-Id")
+        or request.query_params.get("session_id")
+    )
     if header_session and header_session != "*":
         return header_session
     if body_session_id and body_session_id != "*":
         return body_session_id
-    if os.environ.get("DEMO_SESSION_SCOPING", "true").lower() == "true":
+    if (os.environ.get("DEMO_SESSION_SCOPING") or "true").strip().lower() not in ("false", "0", "no", "off"):
         return "anonymous_unassigned"
     return None
 

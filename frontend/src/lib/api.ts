@@ -158,15 +158,15 @@ export const api = {
   health: () => req<{ status: string }>("/health"),
   events: (limit = 100) => req<{ events: EvalEvent[]; capacity: number }>(`/eval/events?limit=${limit}`),
   config: () => req<EvalConfig>("/eval/config"),
-  metrics: (days = 7) => req<Metrics>(`/eval/metrics?days=${days}`),
+  metrics: (days = 7) => req<Metrics>(`/eval/metrics?days=${days}&session_id=${demoSessionId()}`),
   queries: (limit = 50, needsReview?: boolean) =>
     req<QueryRow[]>(
-      `/eval/queries?limit=${limit}${needsReview === undefined ? "" : `&needs_review=${needsReview}`}`,
+      `/eval/queries?limit=${limit}&session_id=${demoSessionId()}${needsReview === undefined ? "" : `&needs_review=${needsReview}`}`,
     ),
-  costReport: (days = 30) => req<CostReport>(`/eval/cost-report?days=${days}`),
-  alerts: () => req<{ flagged_count: number; alerts: QueryRow[] }>("/eval/alerts"),
+  costReport: (days = 30) => req<CostReport>(`/eval/cost-report?days=${days}&session_id=${demoSessionId()}`),
+  alerts: () => req<{ flagged_count: number; alerts: QueryRow[] }>(`/eval/alerts?session_id=${demoSessionId()}`),
   score: (p: ScorePayload) => req<Scores>("/eval/score", post(p)),
-  log: (p: ScorePayload & { session_id?: string }) => req<Scores>("/eval/log", post(p)),
+  log: (p: ScorePayload & { session_id?: string }) => req<Scores>("/eval/log", post({ ...p, session_id: p.session_id || demoSessionId() })),
   retrievalBench: (
     queries: string[],
     a: string[][],
