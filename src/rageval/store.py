@@ -291,18 +291,21 @@ def _demo_session_scoping_enabled() -> bool:
     return (os.environ.get("DEMO_SESSION_SCOPING") or "true").strip().lower() not in ("false", "0", "no", "off")
 
 
-def _scope_clause(session_id: Optional[str]) -> tuple[str, tuple]:
+def _scope_clause(session_id: Optional[str], include_seed: bool = False) -> tuple[str, tuple]:
     """Session-scoping clause for demo isolation.
 
-    - session_id provided: only rows matching that session (or NULL-session platform rows).
-    - session_id=None (admin / platform / SDK view): no filter — all rows visible.
+    - session_id provided without include_seed: strictly rows matching that session.
+    - session_id provided with include_seed: rows matching that session or NULL-session rows.
+    - session_id=None or "*": no filter — all rows visible.
     """
     if not _demo_session_scoping_enabled() or session_id is None or session_id == "*":
         return "", ()
-    return "(session_id IS NULL OR session_id = ?)", (session_id,)
+    if include_seed:
+        return "(session_id IS NULL OR session_id = ?)", (session_id,)
+    return "session_id = ?", (session_id,)
 
 
-def get_metrics(days: int = 7, session_id: Optional[str] = None) -> Dict[str, Any]:
+def get_metrics(days: int = 7, session_id: Optional[str] = None, include_seed: bool = False) -> Dict[str, Any]:
     """Aggregate metrics over the last N days.
 
     query_volume_by_hour is computed from stored timestamps rather than
@@ -311,7 +314,7 @@ def get_metrics(days: int = 7, session_id: Optional[str] = None) -> Dict[str, An
     from datetime import timedelta
     from collections import Counter as _Counter
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    scope_sql, scope_params = _scope_clause(session_id)
+    scope_sql, scope_params = _scope_clause(session_id, include_seed=include_seed)
     sql = "SELECT * FROM rageval_log WHERE timestamp >= ?"
     params: tuple = (cutoff,)
     if scope_sql:
@@ -352,14 +355,19 @@ def get_metrics(days: int = 7, session_id: Optional[str] = None) -> Dict[str, An
         "query_volume_by_hour": query_volume_by_hour,
     }
 
-def get_query_log(limit: int = 50, needs_review: Optional[bool] = None, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_query_log(
+    limit: int = 50,
+    needs_review: Optional[bool] = None,
+    session_id: Optional[str] = None,
+    include_seed: bool = False,
+) -> List[Dict[str, Any]]:
     sql = "SELECT * FROM rageval_log"
     conditions: List[str] = []
     params: tuple = ()
     if needs_review is not None:
         conditions.append("needs_review = ?")
         params = (*params, 1 if needs_review else 0)
-    scope_sql, scope_params = _scope_clause(session_id)
+    scope_sql, scope_params = _scope_clause(session_id, include_seed=include_seed)
     if scope_sql:
         conditions.append(scope_sql)
         params = (*params, *scope_params)
@@ -370,12 +378,12 @@ def get_query_log(limit: int = 50, needs_review: Optional[bool] = None, session_
     rows = _execute(sql, params, fetchall=True)
     return rows or []
 
-def get_cost_report(days: int = 30, session_id: Optional[str] = None) -> Dict[str, Any]:
+def get_cost_report(days: int = 30, session_id: Optional[str] = None, include_seed: bool = False) -> Dict[str, Any]:
     from datetime import timedelta
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     is_pg = bool(settings.POSTGRES_URL)
     date_expr = "DATE(timestamp)" if is_pg else "date(timestamp)"
-    scope_sql, scope_params = _scope_clause(session_id)
+    scope_sql, scope_params = _scope_clause(session_id, include_seed=include_seed)
     sql = f"""
         SELECT {date_expr} AS day, model, SUM(cost_usd) AS cost
         FROM rageval_log WHERE timestamp >= ? {"AND " + scope_sql if scope_sql else ""}
