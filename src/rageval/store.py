@@ -295,17 +295,9 @@ def _scope_clause(session_id: Optional[str]) -> tuple[str, tuple]:
     """Session-scoping clause for demo isolation.
 
     - session_id provided: only rows matching that session (or NULL-session platform rows).
-    - session_id=None (admin / platform view): no filter — all rows visible.
-
-    Bug fix: the previous implementation returned
-    ``(session_id IS NULL OR session_id = ?, (None,))`` when session_id=None,
-    which SQL evaluates as ``session_id IS NULL OR session_id = NULL``. Since
-    ``X = NULL`` is always NULL (not TRUE) in SQL, this silently excluded all
-    rows that had a real session_id — making all session-scoped interactions
-    invisible to platform-level get_metrics() / get_query_log() calls with no
-    session_id argument.
+    - session_id=None (admin / platform / SDK view): no filter — all rows visible.
     """
-    if not _demo_session_scoping_enabled() or session_id is None:
+    if not _demo_session_scoping_enabled() or session_id is None or session_id == "*":
         return "", ()
     return "(session_id IS NULL OR session_id = ?)", (session_id,)
 
