@@ -134,7 +134,7 @@ def _send_telemetry():
     lock_file = os.path.join(settings.LOGS_DIR, ".telemetry_last_ping")
     try:
         if os.path.exists(lock_file):
-            if time.time() - os.path.getmtime(lock_file) < 21600:
+            if time.time() - os.path.getmtime(lock_file) < 30:
                 return
         with open(lock_file, "w") as f:
             f.write(str(time.time()))
@@ -404,10 +404,22 @@ async def health() -> Dict[str, Any]:
 
 def _resolve_session_id(request: Request, body_session_id: Optional[str] = None) -> Optional[str]:
     """A visitor's own browser sends X-Demo-Session-Id (set by the frontend); that takes
-    precedence since it can't be spoofed by a request body field. Service-to-service callers
-    have no browser session and pass session_id in the body instead — their rows stay
-    platform-visible rather than scoped to a single anonymous demo session."""
-    return request.headers.get("X-Demo-Session-Id") or body_session_id
+    precedence since it can't be spoofed by a request body field. Admin token or session '*'
+    allows platform-wide visibility for Omni-Admin."""
+    admin_token = request.headers.get("X-Admin-Token") or request.headers.get("X-RAGeval-Internal-Token")
+    admin_secret = os.getenv("ADMIN_TOKEN") or os.getenv("RAGEVAL_INTERNAL_TOKEN")
+    if admin_token and admin_secret and admin_token == admin_secret:
+        return "*"
+    header_session = request.headers.get("X-Demo-Session-Id") or request.headers.get("X-Session-Id")
+    if header_session == "*":
+        return "*"
+    if header_session:
+        return header_session
+    if body_session_id:
+        return body_session_id
+    if os.environ.get("DEMO_SESSION_SCOPING", "true").lower() == "true":
+        return "anonymous_unassigned"
+    return None
 
 
 @app.post("/eval/log")
