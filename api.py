@@ -404,18 +404,21 @@ async def health() -> Dict[str, Any]:
 
 def _resolve_session_id(request: Request, body_session_id: Optional[str] = None) -> Optional[str]:
     """A visitor's own browser sends X-Demo-Session-Id (set by the frontend); that takes
-    precedence since it can't be spoofed by a request body field. Admin token or session '*'
-    allows platform-wide visibility for Omni-Admin."""
-    admin_token = request.headers.get("X-Admin-Token") or request.headers.get("X-RAGeval-Internal-Token")
+    precedence since it can't be spoofed by a request body field. Admin token is strictly required
+    for platform-wide visibility for Omni-Admin."""
+    admin_token = (
+        request.headers.get("X-Admin-Token")
+        or request.headers.get("X-RAGeval-Internal-Token")
+        or request.headers.get("X-Rageval-Internal-Token")
+    )
     admin_secret = os.getenv("ADMIN_TOKEN") or os.getenv("RAGEVAL_INTERNAL_TOKEN")
-    if admin_token and admin_secret and admin_token == admin_secret:
+    is_admin = bool(admin_token and admin_secret and admin_token == admin_secret)
+    if is_admin:
         return "*"
     header_session = request.headers.get("X-Demo-Session-Id") or request.headers.get("X-Session-Id")
-    if header_session == "*":
-        return "*"
-    if header_session:
+    if header_session and header_session != "*":
         return header_session
-    if body_session_id:
+    if body_session_id and body_session_id != "*":
         return body_session_id
     if os.environ.get("DEMO_SESSION_SCOPING", "true").lower() == "true":
         return "anonymous_unassigned"
