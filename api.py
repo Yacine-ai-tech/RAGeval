@@ -493,22 +493,26 @@ async def eval_config() -> Dict[str, Any]:
 
 @app.get("/eval/metrics")
 async def eval_metrics(request: Request, days: int = 7) -> Dict[str, Any]:
-    return get_metrics(days=days, session_id=_resolve_session_id(request))
+    sess = _resolve_session_id(request)
+    return get_metrics(days=days, session_id=sess, include_seed=(sess == "*"))
 
 
 @app.get("/eval/queries")
 async def eval_queries(request: Request, limit: int = 50, needs_review: Optional[bool] = None) -> List[Dict[str, Any]]:
-    return get_query_log(limit=limit, needs_review=needs_review, session_id=_resolve_session_id(request))
+    sess = _resolve_session_id(request)
+    return get_query_log(limit=limit, needs_review=needs_review, session_id=sess, include_seed=(sess == "*"))
 
 
 @app.get("/eval/cost-report")
 async def eval_cost_report(request: Request, days: int = 30) -> Dict[str, Any]:
-    return get_cost_report(days=days, session_id=_resolve_session_id(request))
+    sess = _resolve_session_id(request)
+    return get_cost_report(days=days, session_id=sess, include_seed=(sess == "*"))
 
 
 @app.get("/eval/alerts")
 async def eval_alerts(request: Request) -> Dict[str, Any]:
-    flagged = get_query_log(limit=50, needs_review=True, session_id=_resolve_session_id(request))
+    sess = _resolve_session_id(request)
+    flagged = get_query_log(limit=50, needs_review=True, session_id=sess, include_seed=(sess == "*"))
     return {"flagged_count": len(flagged), "alerts": flagged[:10]}
 
 
