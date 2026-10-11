@@ -13,3 +13,7 @@ jobs:
             "https://rageval.ysiddo-ai-projects.app/health") || { echo "Health check failed"; exit 1; }
           echo "Production service responded HTTP $code"
           cat /tmp/resp.json
+          ready_code=$(curl -fsS -o /tmp/ready.json -w "%{http_code}" \
+            "https://rageval.ysiddo-ai-projects.app/ready") || { echo "Production database readiness check failed"; exit 1; }
+          echo "Production database readiness returned HTTP $ready_code"
+          cat /tmp/ready.json

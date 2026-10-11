@@ -97,6 +97,7 @@ def chain_invoke(query: str, context_chunks: list[str]):
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | /health | Liveness check |
+| GET | /ready | Database readiness check; returns 503 until the schema can be queried |
 | POST | /eval/log | Score and persist an interaction |
 | POST | /eval/score | Score only, without persisting |
 | GET | /eval/metrics?days=7 | Aggregate dashboard data |
@@ -111,6 +112,18 @@ def chain_invoke(query: str, context_chunks: list[str]):
 
 Full request/response schemas are documented on the dashboard's built-in API Docs page
 (`/api-docs`).
+
+The API rejects request bodies larger than 1 MiB by default. Evaluation and comparison
+requests are also bounded to 10 queries, 20 chunks per query, 4,000 characters per text,
+and 200,000 total input characters. At most two expensive evaluation requests run at once
+per process by default; saturated requests receive HTTP 503 with `Retry-After: 2`. Tune
+`RAGEVAL_MAX_REQUEST_BODY_BYTES` and `RAGEVAL_MAX_CONCURRENT_EVALUATIONS` for the memory
+and CPU budget of the deployment. Provider calls use `JUDGE_TIMEOUT` (default 90 seconds,
+maximum 300) and remote embeddings use `EMBED_TIMEOUT` (default 30 seconds, maximum 120).
+
+The API initializes and migrates its schema before serving requests. A failed schema
+bootstrap aborts startup rather than leaving a partially usable service; `/health` remains
+a liveness probe and `/ready` verifies database availability.
 
 ## Tests
 

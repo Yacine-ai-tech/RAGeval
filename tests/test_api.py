@@ -30,10 +30,60 @@ def test_health():
     assert r.status_code == 200 and r.json()["service"] == "rageval"
 
 
+def test_ready_checks_the_database():
+    r = _client().get("/ready")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ready"
+
+
+def test_schema_bootstrap_failure_is_not_suppressed(monkeypatch):
+    import api as api_mod
+
+    def fail_bootstrap():
+        raise OSError("simulated schema failure")
+
+    monkeypatch.setattr(api_mod, "init_rageval_table", fail_bootstrap)
+    with pytest.raises(RuntimeError, match="database schema bootstrap failed"):
+        api_mod._bootstrap_database()
+
+
+def test_oversized_request_body_is_rejected():
+    body = {"query": "q", "answer": "x" * (1_048_576 + 1)}
+    response = _client().post("/eval/score", json=body, headers=_internal_auth_headers())
+    assert response.status_code == 413
+
+
+def test_retrieval_bench_rejects_over_budget_query_count():
+    queries = [f"query-{i}" for i in range(11)]
+    groups = [["candidate"] for _ in queries]
+    response = _client().post(
+        "/eval/retrieval-bench",
+        json={"queries": queries, "chunks_a": groups, "chunks_b": groups},
+        headers=_internal_auth_headers(),
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "too_many_queries"
+
+
+@pytest.mark.asyncio
+async def test_evaluation_capacity_returns_retryable_503(monkeypatch):
+    import asyncio
+    import api as api_mod
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(api_mod, "_EVALUATION_SLOTS", asyncio.Semaphore(1))
+    async with api_mod._evaluation_slot():
+        with pytest.raises(HTTPException) as exc:
+            async with api_mod._evaluation_slot():
+                pass
+    assert exc.value.status_code == 503
+    assert exc.value.headers["Retry-After"] == "2"
+
+
 def test_routes_registered():
     from api import app
     paths = {r.path for r in app.routes}
-    for p in ("/eval/log", "/eval/score", "/eval/metrics", "/eval/queries",
+    for p in ("/ready", "/eval/log", "/eval/score", "/eval/metrics", "/eval/queries",
               "/eval/cost-report", "/eval/alerts", "/eval/retrieval-bench",
               "/eval/embedding-comparison"):
         assert p in paths, p
@@ -61,7 +111,9 @@ def test_api_compat_shim_copies_postgres_url_once(tmp_path):
     }
     result = subprocess.run(
         [sys.executable, "-c",
-         "import api; import os; print('RAGEVAL_POSTGRES_URL=' + os.environ.get('RAGEVAL_POSTGRES_URL', ''))"],
+         "import sys; sys.path.insert(0, 'src'); import rageval.store as store; "
+         "store.init_rageval_table = lambda: None; import api; import os; "
+         "print('RAGEVAL_POSTGRES_URL=' + os.environ.get('RAGEVAL_POSTGRES_URL', ''))"],
         cwd=str(Path(__file__).resolve().parent.parent), env=env, capture_output=True, text=True, timeout=60,
     )
     assert "RAGEVAL_POSTGRES_URL=postgresql://compat-shim-test/db" in result.stdout, result.stderr
@@ -228,4 +280,3 @@ def test_retrieval_bench_relevant_chunks_length_mismatch_is_400():
     if r.status_code in (401, 403):
         pytest.skip("no valid RAGEVAL_INTERNAL_TOKEN in this environment")
     assert r.status_code == 400
-

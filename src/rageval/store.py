@@ -8,6 +8,7 @@ import json
 import os
 import sqlite3
 import sys
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -37,7 +38,6 @@ CREATE TABLE IF NOT EXISTS rageval_log (
     needs_review INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_rageval_ts ON rageval_log(timestamp);
-CREATE INDEX IF NOT EXISTS idx_rageval_review ON rageval_log(needs_review);
 CREATE INDEX IF NOT EXISTS idx_rageval_model ON rageval_log(model);
 """
 
@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS rageval_log (
     needs_review INTEGER DEFAULT 0
 );
 ALTER TABLE rageval_log ADD COLUMN IF NOT EXISTS query_embedding vector({dim});
+ALTER TABLE rageval_log ADD COLUMN IF NOT EXISTS needs_review INTEGER DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_rageval_ts ON rageval_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_rageval_review ON rageval_log(needs_review);
 CREATE INDEX IF NOT EXISTS idx_rageval_model ON rageval_log(model);
@@ -92,6 +93,8 @@ def _db_path() -> str:
 
 _pg_pool = None
 _pg_pool_lock = None
+_initialized = False
+_init_lock = threading.Lock()
 
 def _get_pooler_url(url: str) -> str:
     """Enforce Neon PgBouncer -pooler endpoint to eliminate TCP/TLS handshake latency."""
@@ -197,12 +200,30 @@ def init_rageval_table() -> None:
     """Initialize the rageval_log table (idempotent)."""
     global _initialized
     is_pg = bool(settings.POSTGRES_URL)
-    _execute(_schema_pg() if is_pg else _SCHEMA_SQLITE, is_script=True)
+    if is_pg:
+        _execute(_schema_pg(), is_script=True)
+    else:
+        conn = sqlite3.connect(_db_path())
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.executescript("BEGIN IMMEDIATE;\n" + _SCHEMA_SQLITE)
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(rageval_log)")}
+            if "needs_review" not in columns:
+                conn.execute("ALTER TABLE rageval_log ADD COLUMN needs_review INTEGER DEFAULT 0")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rageval_review ON rageval_log(needs_review)")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
     log.info("rageval_log initialized (%s)", "postgres" if is_pg else settings.RAGEVAL_DB_PATH)
     _initialized = True
 
 
-_initialized = False
+def check_database() -> None:
+    """Raise when the configured store cannot execute a trivial query."""
+    _execute("SELECT 1", fetchall=True)
 
 
 def _ensure_initialized() -> None:
@@ -212,7 +233,9 @@ def _ensure_initialized() -> None:
     README's whole "pip install, decorate, done" pitch depends on this working with zero
     setup steps."""
     if not _initialized:
-        init_rageval_table()
+        with _init_lock:
+            if not _initialized:
+                init_rageval_table()
 
 
 def _write_interaction_sync(
