@@ -195,10 +195,12 @@ def test_judge_call_has_no_fallback_model_param(monkeypatch):
         return _Resp()
 
     import rageval.evaluator as evaluator_mod
+    monkeypatch.setenv("JUDGE_TIMEOUT", "90")
     monkeypatch.setattr(evaluator_mod, "acompletion", _fake_acompletion)
     ev = RAGEvaluator()
     asyncio.run(ev._judge_groundedness("answer", "context", model="groq/openai/gpt-oss-120b"))
     assert "fallbacks" not in captured
+    assert captured["timeout"] == 90
 
 
 # ─── OpenAI judge cost tracking ────────────────────────────────────────────────

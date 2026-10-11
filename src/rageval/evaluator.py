@@ -4,6 +4,7 @@ RAGEvaluator — Multi-judge consensus + 5 scorers + cost tracking.
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import re
 import statistics
@@ -15,6 +16,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rageval._compat import settings, get_logger  # self-contained (works when pip-installed)
 
 log = get_logger(__name__)
+
+
+def _timeout_env(name: str, default: float, maximum: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be between 0 and {maximum} seconds") from exc
+    if not math.isfinite(value) or value <= 0 or value > maximum:
+        raise RuntimeError(f"{name} must be between 0 and {maximum} seconds")
+    return value
+
 
 try:
     # NOTE: sentence_transformers pulls in torch (~400MB resident) — importing it at module load
@@ -149,7 +161,7 @@ class RAGEvaluator:
             if tk:
                 h["Authorization"] = "Bearer " + tk
 
-            timeout = float(os.getenv("EMBED_TIMEOUT", "30"))
+            timeout = _timeout_env("EMBED_TIMEOUT", 30, 120)
             with httpx.Client(timeout=timeout) as client:
                 if "huggingface.co" in url:
                     resp = client.post(url, json={"inputs": texts}, headers=h)
@@ -328,13 +340,16 @@ class RAGEvaluator:
         # any content, and measured warm latency already reached ~13s. A queue spike then pushes a
         # judge over the ceiling, and because consensus needs MIN_JUDGES_REQUIRED votes, two slow
         # judges are enough to fail the whole score with a 503. Still env-overridable.
-        judge_timeout = float(os.getenv("JUDGE_TIMEOUT", "90"))
+        judge_timeout = _timeout_env("JUDGE_TIMEOUT", 90, 300)
 
         if model.startswith("gemini/"):
             try:
                 from google import genai
                 from google.genai import types
-                client = genai.Client(http_options={"api_version": "v1beta"})
+                client = genai.Client(http_options={
+                    "api_version": "v1beta",
+                    "timeout": int(judge_timeout * 1000),
+                })
             except Exception as e:
                 log.warning("gemini judge %s unavailable (skipped): %s: %s", model, type(e).__name__, e or "<no detail>")
                 return None
@@ -413,6 +428,7 @@ class RAGEvaluator:
                         model=model,
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.0,
+                        timeout=judge_timeout,
                     ),
                     timeout=judge_timeout,
                 )
@@ -429,6 +445,7 @@ class RAGEvaluator:
                                 model=fallback_model,
                                 messages=[{"role": "user", "content": prompt}],
                                 temperature=0.0,
+                                timeout=judge_timeout,
                             ),
                             timeout=judge_timeout,
                         )

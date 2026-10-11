@@ -34,12 +34,13 @@ import asyncio
 import time
 import threading
 import uuid as _uuid
+from contextlib import asynccontextmanager
 from collections import deque as _deque
 from datetime import datetime as _dt
 from typing import Any, Dict, List, Optional
 
 import requests
-from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -53,6 +54,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from rageval.evaluator import RAGEvaluator, InsufficientJudgesError
 from rageval.store import (
+    check_database,
     get_cost_report,
     get_metrics,
     get_query_log,
@@ -75,6 +77,127 @@ except ImportError:
 
 log = get_logger(__name__)
 
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a positive integer") from exc
+    if value < 1:
+        raise RuntimeError(f"{name} must be a positive integer")
+    return value
+
+
+MAX_REQUEST_BODY_BYTES = _positive_int_env("RAGEVAL_MAX_REQUEST_BODY_BYTES", 1_048_576)
+MAX_CONCURRENT_EVALUATIONS = _positive_int_env("RAGEVAL_MAX_CONCURRENT_EVALUATIONS", 2)
+MAX_EVAL_QUERIES = 10
+MAX_EVAL_CHUNKS_PER_QUERY = 20
+MAX_EVAL_TEXT_CHARS = 4_000
+MAX_EVAL_TOTAL_CHARS = 200_000
+_EVALUATION_SLOTS = asyncio.Semaphore(MAX_CONCURRENT_EVALUATIONS)
+
+
+class _RequestBodyTooLarge(Exception):
+    pass
+
+
+class RequestBodyLimitMiddleware:
+    """Reject oversized bodies before FastAPI/Pydantic buffers and parses them."""
+
+    def __init__(self, app, max_body_bytes: int):
+        self.app = app
+        self.max_body_bytes = max_body_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
+        if content_length is not None:
+            try:
+                declared_length = int(content_length)
+            except ValueError:
+                await self._respond(send, 400, b'{"detail":"invalid_content_length"}')
+                return
+            if declared_length < 0:
+                await self._respond(send, 400, b'{"detail":"invalid_content_length"}')
+                return
+            if declared_length > self.max_body_bytes:
+                await self._respond(send, 413, b'{"detail":"request_body_too_large"}')
+                return
+
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_body_bytes:
+                    raise _RequestBodyTooLarge
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except _RequestBodyTooLarge:
+            await self._respond(send, 413, b'{"detail":"request_body_too_large"}')
+
+    @staticmethod
+    async def _respond(send, status: int, body: bytes):
+        await send({
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("ascii")),
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})
+
+
+@asynccontextmanager
+async def _evaluation_slot():
+    try:
+        await asyncio.wait_for(_EVALUATION_SLOTS.acquire(), timeout=0.1)
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="evaluation_capacity_exhausted",
+            headers={"Retry-After": "2"},
+        ) from exc
+    try:
+        yield
+    finally:
+        _EVALUATION_SLOTS.release()
+
+
+def _validate_eval_inputs(queries: List[str], chunk_groups: List[List[str]]) -> None:
+    if len(queries) > MAX_EVAL_QUERIES:
+        raise HTTPException(status_code=422, detail="too_many_queries")
+    if len(chunk_groups) != len(queries):
+        raise HTTPException(status_code=400, detail="query_chunk_group_length_mismatch")
+
+    total_chars = sum(len(query) for query in queries)
+    for query, chunks in zip(queries, chunk_groups):
+        if len(query) > MAX_EVAL_TEXT_CHARS:
+            raise HTTPException(status_code=422, detail="query_too_long")
+        if len(chunks) > MAX_EVAL_CHUNKS_PER_QUERY:
+            raise HTTPException(status_code=422, detail="too_many_chunks_per_query")
+        for chunk in chunks:
+            if len(chunk) > MAX_EVAL_TEXT_CHARS:
+                raise HTTPException(status_code=422, detail="chunk_too_long")
+            total_chars += len(chunk)
+    if total_chars > MAX_EVAL_TOTAL_CHARS:
+        raise HTTPException(status_code=422, detail="evaluation_payload_too_large")
+
+
+def _validate_single_eval(query: str, answer: str, chunks: List[str]) -> None:
+    _validate_eval_inputs([query], [chunks])
+    if len(answer) > MAX_EVAL_TEXT_CHARS:
+        raise HTTPException(status_code=422, detail="answer_too_long")
+
+
 # Read the real installed package version rather than hardcoding one.
 try:
     from importlib.metadata import version as _pkg_version
@@ -92,6 +215,7 @@ except Exception:
         _VERSION = "unknown"
 
 app = FastAPI(title="RAGeval", version=_VERSION, description="Drop-in LLMOps observability.")
+app.add_middleware(RequestBodyLimitMiddleware, max_body_bytes=MAX_REQUEST_BODY_BYTES)
 
 # Attach the rate limiter to the app.
 if _RATE_LIMIT_ENABLED:
@@ -346,10 +470,15 @@ async def dashboard():
 
 # ─── DB init ─────────────────────────────────────────────────────────────────
 
-try:
-    init_rageval_table()
-except Exception as e:
-    log.warning("DB init failed at import: %s", e)
+def _bootstrap_database() -> None:
+    try:
+        init_rageval_table()
+    except Exception as e:
+        log.exception("RAGeval database schema bootstrap failed")
+        raise RuntimeError("RAGeval database schema bootstrap failed") from e
+
+
+_bootstrap_database()
 
 
 # ─── Request models ──────────────────────────────────────────────────────────
@@ -402,6 +531,16 @@ async def health() -> Dict[str, Any]:
     return {"status": "ok", "service": "rageval", "version": _VERSION}
 
 
+@app.get("/ready")
+async def ready() -> Dict[str, Any]:
+    try:
+        await asyncio.to_thread(check_database)
+    except Exception as e:
+        log.warning("RAGeval readiness check failed: %s", e)
+        raise HTTPException(status_code=503, detail="database_unavailable") from e
+    return {"status": "ready", "service": "rageval", "version": _VERSION}
+
+
 def _resolve_session_id(request: Request, body_session_id: Optional[str] = None) -> Optional[str]:
     """A visitor's own browser sends X-Demo-Session-Id (set by the frontend); that takes
     precedence since it can't be spoofed by a request body field. Admin token is strictly required
@@ -430,14 +569,16 @@ async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
     # Rate-limit write endpoints that trigger LLM judge calls.
     if _RATE_LIMIT_ENABLED and _limiter:
         _limiter._check_request_limit(request, eval_log, "60/minute")  # type: ignore[arg-type]
+    _validate_single_eval(req.query, req.answer, req.chunks or req.contexts)
     session_id = _resolve_session_id(request, req.session_id)
     _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona, session_id=session_id)
     try:
-        scores = await evaluator.score_interaction(
-            query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
-            tokens_used=req.tokens_used, latency_ms=req.latency_ms,
-            model=req.model, persona=req.persona,
-        )
+        async with _evaluation_slot():
+            scores = await evaluator.score_interaction(
+                query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
+                tokens_used=req.tokens_used, latency_ms=req.latency_ms,
+                model=req.model, persona=req.persona,
+            )
     except InsufficientJudgesError as e:
         raise HTTPException(status_code=503, detail=str(e))
     await log_interaction(req.query, req.answer, req.persona, scores, session_id)
@@ -452,14 +593,16 @@ async def eval_score(req: ScoreRequest, request: Request) -> Dict[str, Any]:
     # Rate-limit score endpoint — each call triggers multiple LLM judge calls.
     if _RATE_LIMIT_ENABLED and _limiter:
         _limiter._check_request_limit(request, eval_score, "60/minute")  # type: ignore[arg-type]
+    _validate_single_eval(req.query, req.answer, req.chunks or req.contexts)
     session_id = _resolve_session_id(request, None)
     _emit("interaction.received", route="/eval/score", query=req.query[:120], persona=req.persona, session_id=session_id)
     try:
-        scores = await evaluator.score_interaction(
-            query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
-            tokens_used=req.tokens_used, latency_ms=req.latency_ms,
-            model=req.model, persona=req.persona,
-        )
+        async with _evaluation_slot():
+            scores = await evaluator.score_interaction(
+                query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
+                tokens_used=req.tokens_used, latency_ms=req.latency_ms,
+                model=req.model, persona=req.persona,
+            )
     except InsufficientJudgesError as e:
         raise HTTPException(status_code=503, detail=str(e))
     c = scores.get("groundedness_consensus", {})
@@ -470,7 +613,7 @@ async def eval_score(req: ScoreRequest, request: Request) -> Dict[str, Any]:
 
 @app.get("/eval/events")
 async def eval_events(
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=200),
     x_demo_session_id: Optional[str] = Header(default=None, alias="X-Demo-Session-Id"),
 ) -> Dict[str, Any]:
     """Live telemetry: the most recent evaluation-pipeline events (in-memory ring).
@@ -485,6 +628,13 @@ async def eval_config() -> Dict[str, Any]:
     return {
         "judge_models": settings.JUDGE_MODELS,
         "embedding_model": getattr(settings, "EMBEDDING_MODEL", None),
+        "request_limits": {
+            "body_bytes": MAX_REQUEST_BODY_BYTES,
+            "queries_per_comparison": MAX_EVAL_QUERIES,
+            "chunks_per_query": MAX_EVAL_CHUNKS_PER_QUERY,
+            "characters_per_text": MAX_EVAL_TEXT_CHARS,
+        },
+        "max_concurrent_evaluations": MAX_CONCURRENT_EVALUATIONS,
         "disagreement_stdev_threshold": 0.2,
         "review_flags": ["LOW_RETRIEVAL_RELEVANCE", "POTENTIAL_HALLUCINATION",
                           "HIGH_LATENCY", "JUDGE_DISAGREEMENT", "PERSONA_SCOPE_VIOLATION"],
@@ -492,19 +642,23 @@ async def eval_config() -> Dict[str, Any]:
 
 
 @app.get("/eval/metrics")
-async def eval_metrics(request: Request, days: int = 7) -> Dict[str, Any]:
+async def eval_metrics(request: Request, days: int = Query(default=7, ge=1, le=365)) -> Dict[str, Any]:
     sess = _resolve_session_id(request)
     return get_metrics(days=days, session_id=sess, include_seed=(sess == "*"))
 
 
 @app.get("/eval/queries")
-async def eval_queries(request: Request, limit: int = 50, needs_review: Optional[bool] = None) -> List[Dict[str, Any]]:
+async def eval_queries(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=500),
+    needs_review: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
     sess = _resolve_session_id(request)
     return get_query_log(limit=limit, needs_review=needs_review, session_id=sess, include_seed=(sess == "*"))
 
 
 @app.get("/eval/cost-report")
-async def eval_cost_report(request: Request, days: int = 30) -> Dict[str, Any]:
+async def eval_cost_report(request: Request, days: int = Query(default=30, ge=1, le=365)) -> Dict[str, Any]:
     sess = _resolve_session_id(request)
     return get_cost_report(days=days, session_id=sess, include_seed=(sess == "*"))
 
@@ -523,14 +677,26 @@ async def retrieval_bench(req: RetrievalBenchRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="length_mismatch")
     if req.relevant_chunks is not None and len(req.relevant_chunks) != n:
         raise HTTPException(status_code=400, detail="relevant_chunks_length_mismatch")
+    if n == 0:
+        raise HTTPException(status_code=400, detail="queries_required")
+    _validate_eval_inputs(req.queries, req.chunks_a)
+    _validate_eval_inputs(req.queries, req.chunks_b)
+    if req.relevant_chunks is not None:
+        _validate_eval_inputs(req.queries, req.relevant_chunks)
+    total_chars = sum(map(len, req.queries))
+    groups = req.chunks_a + req.chunks_b + (req.relevant_chunks or [])
+    total_chars += sum(map(len, (chunk for chunks in groups for chunk in chunks)))
+    if total_chars > MAX_EVAL_TOTAL_CHARS:
+        raise HTTPException(status_code=422, detail="evaluation_payload_too_large")
 
     # A single reusable helper — the A/B difference is purely in the input data
     # (chunks_a vs chunks_b), not in the scoring strategy.
     async def _score_chunks(q, cs):
         return await asyncio.to_thread(evaluator.score_retrieval_relevance, q, cs)
 
-    a_relevance = await asyncio.gather(*[_score_chunks(q, cs) for q, cs in zip(req.queries, req.chunks_a)])
-    b_relevance = await asyncio.gather(*[_score_chunks(q, cs) for q, cs in zip(req.queries, req.chunks_b)])
+    async with _evaluation_slot():
+        a_relevance = await asyncio.gather(*[_score_chunks(q, cs) for q, cs in zip(req.queries, req.chunks_a)])
+        b_relevance = await asyncio.gather(*[_score_chunks(q, cs) for q, cs in zip(req.queries, req.chunks_b)])
 
     def _ranking_summary(chunks_per_query: List[List[str]]) -> Optional[Dict[str, Any]]:
         if req.relevant_chunks is None:
@@ -587,6 +753,11 @@ async def retrieval_bench(req: RetrievalBenchRequest) -> Dict[str, Any]:
 
 @app.post("/eval/embedding-comparison")
 async def embedding_comparison(req: EmbeddingComparisonRequest) -> Dict[str, Any]:
+    if not req.queries:
+        raise HTTPException(status_code=400, detail="queries_required")
+    if not req.embedding_models or len(req.embedding_models) > 3:
+        raise HTTPException(status_code=422, detail="embedding_model_count_out_of_range")
+    _validate_eval_inputs(req.queries, req.chunks)
     results: Dict[str, float] = {}
 
     async def _eval_model(model):
@@ -597,7 +768,8 @@ async def embedding_comparison(req: EmbeddingComparisonRequest) -> Dict[str, Any
         )
         return model, sum(scores) / max(len(scores), 1)
 
-    res = await asyncio.gather(*[_eval_model(m) for m in req.embedding_models])
+    async with _evaluation_slot():
+        res = await asyncio.gather(*[_eval_model(m) for m in req.embedding_models])
     for model, score in res:
         results[model] = score
 
