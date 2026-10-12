@@ -3,7 +3,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        --extra-index-url https://pypi.org/simple \
+        torch \
+    && pip install --no-cache-dir -r requirements.txt \
+    && python -c "import torch; assert torch.version.cuda is None, 'RAGeval production image requires CPU-only PyTorch'"
 
 COPY . .
 

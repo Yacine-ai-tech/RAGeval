@@ -21,10 +21,11 @@ at `http://localhost:8003` once the server is running.
 
 ## 2. Running via Docker
 
-The repo includes a `Dockerfile` (a slim `python:3.11-slim` base that installs
-`requirements.txt`, copies the app, and runs `uvicorn api:app` on port 8003, honoring a
+The repo includes a `Dockerfile` (a slim `python:3.11-slim` base that installs CPU-only PyTorch
+and `requirements.txt`, copies the app, and runs `uvicorn api:app` on port 8003, honoring a
 platform-injected `$PORT` if one is set) and a `docker-compose.dev.yml` for a batteries-included
-dev/self-hosted setup.
+dev/self-hosted setup. The production image intentionally omits CUDA runtime packages because
+RAGeval's production inference runs on CPU.
 
 To build and run with Docker directly:
 
