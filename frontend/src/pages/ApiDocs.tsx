@@ -19,7 +19,7 @@ type Endpoint = {
   response: string;
 };
 
-// The full, real API surface — 12 endpoints, verified directly against api.py.
+// The full, real API surface — verified directly against api.py.
 const ENDPOINTS: Endpoint[] = [
   // ── System ──────────────────────────────────────────────────────────────
   {
@@ -36,7 +36,15 @@ const ENDPOINTS: Endpoint[] = [
     path: "/health",
     desc: "Liveness check. Not gated by the internal-token middleware — always reachable, used for uptime probes and the frontend's \"waking backend\" retry loop.",
     body: null,
-    response: `{"status": "ok", "service": "rageval", "version": "0.1.27"}`,
+    response: `{"status": "ok", "service": "rageval", "version": "0.2.2"}`,
+  },
+  {
+    group: "System",
+    method: "GET",
+    path: "/ready",
+    desc: "Database readiness probe. Returns HTTP 200 only when the configured store can execute a query; returns 503 when the database is unavailable. Schema bootstrap/migration errors prevent the API from starting.",
+    body: null,
+    response: `{"status": "ready", "service": "rageval", "version": "0.2.2"}`,
   },
   // ── Scoring ─────────────────────────────────────────────────────────────
   {
@@ -219,7 +227,7 @@ const ENDPOINTS: Endpoint[] = [
     group: "Observability",
     method: "GET",
     path: "/eval/config",
-    desc: "Factual evaluator configuration — no secrets. Which judge models are configured, the embedding model, the judge-disagreement stdev threshold, and the full set of review-flag codes the scorer can emit.",
+    desc: "Factual evaluator configuration — no secrets. Includes configured judges, embedding model, request/input budgets, per-process evaluation concurrency, disagreement threshold, and review-flag codes.",
     body: null,
     response: `{
   "judge_models": [
@@ -229,6 +237,13 @@ const ENDPOINTS: Endpoint[] = [
     "openai/gpt-4o-mini"
   ],
   "embedding_model": "BAAI/bge-m3",
+  "request_limits": {
+    "body_bytes": 1048576,
+    "queries_per_comparison": 10,
+    "chunks_per_query": 20,
+    "characters_per_text": 4000
+  },
+  "max_concurrent_evaluations": 2,
   "disagreement_stdev_threshold": 0.2,
   "review_flags": [
     "LOW_RETRIEVAL_RELEVANCE",
@@ -244,7 +259,7 @@ const ENDPOINTS: Endpoint[] = [
     group: "Benchmarking",
     method: "POST",
     path: "/eval/retrieval-bench",
-    desc: "A/B compare two retrieval strategies on the same set of queries. chunks_a and chunks_b must each have one ranked chunk-list per query (same length as queries, or a 400 length_mismatch is returned). Always returns each strategy's mean embedding-relevance score (no labels needed). Optionally pass relevant_chunks — the ground-truth relevant chunk text per query — to also get precision@k, recall@k, and MRR (standard IR ranking metrics); when supplied, the winner is decided by ranking quality (precision/recall F1) rather than embedding similarity.",
+    desc: "A/B compare two retrieval strategies on the same set of queries. Each request is capped at 10 queries, 20 chunks per query, 4,000 characters per text, 200,000 total characters, and the configured 1 MiB request-body limit. Excessive evaluator work is rejected with HTTP 422; capacity saturation returns HTTP 503 with Retry-After. Optionally pass relevant_chunks for precision@k, recall@k, and MRR.",
     body: `{
   "queries": ["What is our refund policy?"],
   "chunks_a": [["Refunds are processed within 5 business days...", "Store credit is issued..."]],
@@ -280,7 +295,7 @@ const ENDPOINTS: Endpoint[] = [
     group: "Benchmarking",
     method: "POST",
     path: "/eval/embedding-comparison",
-    desc: "Score the same queries/chunks with multiple embedding models and compare retrieval-relevance means side by side. embedding_models defaults to [\"BAAI/bge-m3\", \"sentence-transformers/all-MiniLM-L6-v2\"] when omitted. Useful for picking an embedding model before committing to it in production.",
+    desc: "Score the same bounded queries/chunks with up to three embedding models and compare retrieval-relevance means side by side. embedding_models defaults to [\"BAAI/bge-m3\", \"sentence-transformers/all-MiniLM-L6-v2\"] when omitted. Capacity saturation returns HTTP 503 with Retry-After.",
     body: `{
   "queries": ["What is our refund policy?"],
   "chunks": [["Refunds are processed within 5 business days...", "Store credit is issued..."]],

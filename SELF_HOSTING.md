@@ -82,6 +82,9 @@ every variable here. A few that matter most when you're first standing up an ins
   reachable judges returns an error rather than silently scoring on one).
 - `RAGEVAL_STORE` / `RAGEVAL_DB_PATH` — storage backend selection (see below).
 - `CORS_ALLOWED_ORIGINS` — set this explicitly for anything beyond local dev.
+- `RAGEVAL_MAX_REQUEST_BODY_BYTES` — maximum API request size (default 1 MiB).
+- `RAGEVAL_MAX_CONCURRENT_EVALUATIONS` — expensive evaluation slots per process (default 2).
+- `JUDGE_TIMEOUT` / `EMBED_TIMEOUT` — upstream judge and remote-embedding request deadlines.
 
 Never commit a real `.env` file — only `.env.example` (with placeholder values) belongs in version
 control.
@@ -105,13 +108,17 @@ intentional — a generic `POSTGRES_URL` fallback would risk RAGeval, when impor
 a host application, silently adopting that application's own unrelated database. Set the
 RAGeval-specific variable.
 
+The API bootstraps/migrates the configured schema before serving. A failed bootstrap aborts startup
+instead of being logged and ignored. Use `/health` for process liveness and `/ready` for database
+readiness; deployments should gate traffic on `/ready`.
+
 ## 5. Deploying to a container host
 
 Because RAGeval ships as a standard container (a `Dockerfile` producing a single image that serves
 both the API and, via the same origin, the built frontend), it's portable across most container
 hosting options. A few interchangeable examples of where you could run it:
 
-- **A managed container platform** (e.g. Fly.io, Render, or similar) — point it at the `Dockerfile`
+- **A managed container platform** — point it at the `Dockerfile`
   and set your `.env` values as platform environment variables. Most of these platforms inject
   their own `$PORT`, which the Dockerfile already honors (`--port ${PORT:-8003}`).
 - **A plain VPS** — run the Docker image directly (`docker run`) or via `docker compose`, behind
