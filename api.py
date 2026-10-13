@@ -272,7 +272,8 @@ def _send_telemetry():
         from importlib.metadata import version as _pkg_version
         _version = _pkg_version("omnismart-rageval")
     except Exception:
-        _version = "unknown"
+        from rageval._telemetry import _pyproject_version
+        _version = _pyproject_version("omnismart-rageval")
     payload = {
         "service": "RAGeval",
         "event": "startup",
