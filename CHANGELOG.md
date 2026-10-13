@@ -1,5 +1,37 @@
 # Changelog
 
+## [Unreleased]
+### Added
+- Provider key pool: several API keys per provider are discovered from the environment
+  (`<PROVIDER>_API_KEY`, `<PROVIDER>_API_KEY_<n>` or a comma-separated `<PROVIDER>_API_KEYS`),
+  and a key that returns a rate-limit error is set aside for a cooldown while the next one is used.
+  `<PROVIDER>_KEY_SLOTS` restricts which numbered keys a deployment uses.
+- Visitor analytics that avoid personal data, with demo-session isolation.
+### Fixed
+- Evaluation requests are bounded (request body size, queries, chunks and characters per
+  request, concurrent evaluations), and `/ready` reports database readiness. A failed schema
+  bootstrap now aborts startup.
+- The production image installs CPU-only PyTorch.
+
+## [0.2.2] - 2026-10-09
+### Fixed
+- Platform-wide metrics scoping can be bypassed only by an authenticated administrator;
+  demo visitors see only their own session.
+- Telemetry startup ping respects a 30-second cooldown per instance.
+### Changed
+- Database access uses a thread-safe connection pool; responses are gzip-compressed.
+
+## [0.2.1] - 2026-09-24
+### Added
+- Geometric-median aggregation and a heterogeneous non-LLM judge for the consensus score.
+- Dynamic quorum support: the panel size follows the judges that are configured and reachable.
+### Changed
+- The startup ping is on by default and can be disabled with `TELEMETRY_OPT_OUT=true` or
+  `DO_NOT_TRACK=1`; `TELEMETRY_URL` overrides the destination.
+### Fixed
+- The default Gemini judge model name was updated after the previous one was retired.
+- Real token and judge cost and latency are measured instead of estimated.
+
 ## [0.2.0] - 2026-08-27
 ### Changed
 - `RAGEvaluator.score_groundedness_consensus` now computes an accuracy-weighted mean
@@ -45,9 +77,8 @@
 ### Changed
 - Repository sanitization pass ahead of public release: removed internal-deployment
   ops scripts that shipped with a hardcoded service token and fabricated internal
-  fixture data (`scripts/load_real_data.py`, `test_all_prod.py`, `update_render.py`,
-  and others — these called a private production instance directly and had no place
-  in the published repo).
+  fixture data. They called a private production instance directly and had no place
+  in the published repo.
 - Removed the platform-specific deploy blueprint and CI auto-deploy step; the project
   no longer assumes or documents any single hosting platform. See
   [SELF_HOSTING.md](SELF_HOSTING.md) for vendor-neutral Docker/self-hosting
@@ -90,8 +121,8 @@
   The fallback was the actual bug: it made `rageval`, embedded as a library, silently
   adopt a host app's own unrelated Postgres whenever that host (reasonably) also used
   the generic `POSTGRES_URL` name for itself. Confirmed live twice while fixing this —
-  the fallback wrote a real `rageval_log` table into another real project's production
-  database before being removed (cleaned up, verified zero rows remain).
+  the fallback wrote a `rageval_log` table into the host application's own database
+  before being removed (cleaned up; no rows remain).
 - This project's own standalone deployment (`api.py`), where an existing hosting
   platform's dashboard sets `POSTGRES_URL` directly rather than this repo's `.env`, keeps
   working via a narrow, one-time `POSTGRES_URL`->`RAGEVAL_POSTGRES_URL` compat copy done
