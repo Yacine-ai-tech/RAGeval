@@ -134,6 +134,12 @@ end-to-end paths:
 pytest tests/ -q
 ```
 
+## Support the project
+
+If RAGeval is useful to you, a star on the repository helps other engineers find it, and following [@Yacine-ai-tech](https://github.com/Yacine-ai-tech) is the simplest way to hear about new releases. Passing the link to a colleague who has the same problem is just as welcome.
+
+Questions and field notes go to [Discussions](https://github.com/Yacine-ai-tech/RAGeval/discussions); reproducible bugs go to [Issues](https://github.com/Yacine-ai-tech/RAGeval/issues).
+
 ## License
 
 Open-source under the AGPL-3.0 License, free for researchers, students, and open-source use.
