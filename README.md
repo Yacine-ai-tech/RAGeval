@@ -11,9 +11,9 @@
 **Self-hosted LLMOps observability for RAG pipelines, with multi-judge consensus scoring,
 persona-scope detection, and a drop-in Python decorator.**
 
-`pip install omnismart-rageval` (v0.2.1)
+`pip install omnismart-rageval`
 
-**Live Application:** [rageval.ysiddo-ai-projects.app](https://rageval.ysiddo-ai-projects.app) — score queries and inspect real-time consensus telemetry.
+**Live application:** [rageval.ysiddo-ai-projects.app](https://rageval.ysiddo-ai-projects.app). Score queries and inspect consensus telemetry as it arrives.
 - **Research Background:** [`RESEARCH.md`](RESEARCH.md) / [Online Research Documentation](https://rageval.ysiddo-ai-projects.app/research)
 - **Empirical Benchmarks:** [`BENCHMARK.md`](BENCHMARK.md) / [Online Benchmark Dashboard](https://rageval.ysiddo-ai-projects.app/benchmarks)
 - **User Guide:** [Online User Guide](https://rageval.ysiddo-ai-projects.app/guide)
@@ -57,7 +57,6 @@ measured accuracy against a hallucination-detection benchmark is in
 | Persona-scope detection | Yes | No | No | No |
 | Multi-judge consensus | Yes | No | No | No |
 | Cost tracking | Yes | Yes | Yes | Partial |
-| Setup time | ~1 minute | ~10 minutes | ~15 minutes | ~10 minutes |
 
 Based on each project's public documentation as of 2026; feature sets in this space change
 quickly and are worth re-checking independently.
@@ -127,7 +126,7 @@ a liveness probe and `/ready` verifies database availability.
 
 ## Tests
 
-70+ test functions across smoke, API, evaluator, decorator, DSPy integration, storage, and
+100+ test functions across smoke, API, evaluator, decorator, DSPy integration, storage, and
 end-to-end paths:
 
 ```bash
@@ -144,8 +143,8 @@ Questions and field notes go to [Discussions](https://github.com/Yacine-ai-tech/
 
 Open-source under the AGPL-3.0 License, free for researchers, students, and open-source use.
 AGPLv3 requires that any proprietary network service built on modified RAGeval code also
-open-source its backend. A commercial license — for closed-source use or enterprise features
-such as SSO and custom RBAC — is available: see [COMMERCIAL.md](COMMERCIAL.md).
+open-source its backend. A commercial license for closed-source use or enterprise features
+such as SSO and custom RBAC is available: see [COMMERCIAL.md](COMMERCIAL.md).
 
 ## Anonymous Telemetry
 
