@@ -44,7 +44,7 @@ export default function ResearchPage() {
           <div className="rounded-xl border border-line bg-surface-2 p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-ok mb-1">Judge Jury</div>
             <div className="font-semibold text-body text-sm mb-1">Heterogeneous Panel</div>
-            <div className="text-xs text-dim">4 distinct model families (Claude, Groq/Llama, GPT, Gemini) scoring each turn without single-model SPOF.</div>
+            <div className="text-xs text-dim">Four judges from different providers (Claude, gpt-oss via Groq, GPT, Gemini), so no single provider outage stops scoring.</div>
           </div>
           <div className="rounded-xl border border-line bg-surface-2 p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Uncertainty Signal</div>
@@ -83,7 +83,7 @@ export default function ResearchPage() {
               <li><strong className="text-body">Position Bias:</strong> Favoring earlier context chunks or candidate options during pairwise assessment.</li>
             </ul>
             <p>
-              A heterogeneous panel distributing evaluation across independent architectures dampens family-specific idiosyncrasies and produces calibrated confidence intervals.
+              A heterogeneous panel distributing evaluation across independent architectures dampens family-specific idiosyncrasies and exposes inter-judge disagreement as a review signal. It does not, by itself, produce calibrated confidence intervals.
             </p>
           </div>
         </Card>
@@ -98,7 +98,7 @@ export default function ResearchPage() {
           <div className="rounded-xl border border-line bg-surface-2 p-4 text-xs space-y-2">
             <div className="font-semibold text-body">The "Two Effective Votes" Phenomenon (Kohli, arXiv:2605.29800)</div>
             <p>
-              Across nine frontier LLMs evaluated on hallucination benchmarks, error correlation between models remains above 0.65. Consequently, naive uniform averaging can allow weaker judges to drag down a superior judge's verdict.
+              Across nine frontier LLMs on natural-language-inference labels, the panel carried about 2.2 effective independent votes (Kish effective sample size), and the best single judge matched or beat the full panel in every condition studied. Naive uniform averaging can therefore let weaker judges pull a stronger judge's verdict down.
             </p>
           </div>
           <p className="text-xs">
@@ -107,11 +107,11 @@ export default function ResearchPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div className="rounded-lg bg-surface-2 p-3 border border-line">
               <div className="font-semibold text-body mb-1">Accuracy-Weighted Consensus</div>
-              <div>Judges are weighted dynamically by their empirical accuracy on calibrated benchmark splits (Li et al., HaluEval-QA), preventing weaker models from skewing the final consensus score.</div>
+              <div>Each judge is weighted by its accuracy measured on HaluEval-QA (Li et al.), which reduces how far weaker judges can pull the consensus score.</div>
             </div>
             <div className="rounded-lg bg-surface-2 p-3 border border-line">
               <div className="font-semibold text-body mb-1">Disagreement-Gated Escalation</div>
-              <div>When inter-judge standard deviation exceeds σ &gt; 0.20, the system flags the turn for asynchronous arbitration or escalation rather than masking the uncertainty in a blended mean.</div>
+              <div>When inter-judge standard deviation exceeds σ &gt; 0.20, the turn is flagged for human review rather than hiding the uncertainty in a blended mean.</div>
             </div>
           </div>
         </div>
@@ -123,7 +123,7 @@ export default function ResearchPage() {
           <div className="rounded-lg bg-surface-2 p-3 border border-line">
             <div className="font-semibold text-body mb-1">Gemini 3.5 Flash</div>
             <div className="text-accent font-bold mb-1">Accuracy: 88.5%</div>
-            <div className="text-dim">Highest individual judge accuracy on HaluEval-QA. Excels at numerical precision and negation tracking.</div>
+            <div className="text-dim">Highest individual accuracy on HaluEval-QA in this benchmark (0.885).</div>
           </div>
           <div className="rounded-lg bg-surface-2 p-3 border border-line">
             <div className="font-semibold text-body mb-1">GPT-5-mini</div>
@@ -152,7 +152,7 @@ export default function ResearchPage() {
           </div>
           <div className="border-b border-line pb-2">
             <div className="font-semibold text-body">Nine Judges, Two Effective Votes: Correlated Errors Undermine LLM Evaluation Panels</div>
-            <div className="text-muted">Kohli, N. (arXiv:2605.29800, 2026). Mathematical proof of correlated error limits in multi-model juries.</div>
+            <div className="text-muted">Kohli, G. (arXiv:2605.29800, 2026). Empirical measurement of how much independent information a panel of LLM judges carries.</div>
           </div>
           <div className="border-b border-line pb-2">
             <div className="font-semibold text-body">RoPoLL: Robust Panel of LLM Judges via Geometric Median Aggregation</div>
