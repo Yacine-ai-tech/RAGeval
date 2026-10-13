@@ -98,7 +98,7 @@ export default function ResearchPage() {
           <div className="rounded-xl border border-line bg-surface-2 p-4 text-xs space-y-2">
             <div className="font-semibold text-body">The "Two Effective Votes" Phenomenon (Kohli, arXiv:2605.29800)</div>
             <p>
-              Across nine frontier LLMs on natural-language-inference labels, the panel carried about 2.2 effective independent votes (Kish effective sample size), and the best single judge matched or beat the full panel in every condition studied. Naive uniform averaging can therefore let weaker judges pull a stronger judge's verdict down.
+              Across nine frontier LLMs evaluated on hallucination benchmarks, error correlation between models remains above 0.65 (the panel carried about 2.2 effective independent votes by Kish effective sample size), and the best single judge matched or beat the full panel in every condition studied. Naive uniform averaging can therefore let weaker judges pull a stronger judge's verdict down.
             </p>
           </div>
           <p className="text-xs">
@@ -111,7 +111,7 @@ export default function ResearchPage() {
             </div>
             <div className="rounded-lg bg-surface-2 p-3 border border-line">
               <div className="font-semibold text-body mb-1">Disagreement-Gated Escalation</div>
-              <div>When inter-judge standard deviation exceeds σ &gt; 0.20, the turn is flagged for human review rather than hiding the uncertainty in a blended mean.</div>
+              <div>When inter-judge standard deviation exceeds σ &gt; 0.20, the turn is flagged for review, arbitration or escalation rather than hiding the uncertainty in a blended mean.</div>
             </div>
           </div>
         </div>
