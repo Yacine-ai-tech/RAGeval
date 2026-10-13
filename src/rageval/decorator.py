@@ -38,22 +38,15 @@ _bg_loop_lock = threading.Lock()
 # Tracks in-flight background evaluations scheduled via the dedicated bg loop (the
 # script/CLI/__main__ path) so flush() below has something to wait on. A short-lived
 # script that calls a @track-decorated function and exits shortly after — an
-# explicitly documented supported use case — silently loses the evaluation: the bg
-# loop's thread is a daemon, so it's killed the instant the main thread finishes,
-# mid-flight, however far the real network calls to the judge APIs had gotten.
-# Confirmed live: a call needing ~20s of real LLM latency to score never reached the
-# DB when the calling script exited after 15s.
+# explicitly documented supported use case — would lose the evaluation: the bg loop's
+# thread is a daemon, so it is stopped as soon as the main thread finishes, however far
+# the network calls to the judge APIs had gotten.
 #
-# An atexit hook that blocks on this looked like the fix, but doesn't actually work:
-# confirmed live, it does keep the process alive, yet the pending judge calls still
-# fail with "cannot schedule new futures after interpreter shutdown" — litellm's sync
-# HTTP calls run on asyncio's *default* executor via loop.run_in_executor(None, ...),
-# and concurrent.futures.thread's own process-wide shutdown hook (registered through
-# threading._register_atexit, not the public atexit module) tears that default
-# executor down on a schedule this module's own atexit callback can't reliably
-# out-order. Rather than ship a fix that adds up to 30s of hang on every short
-# script without actually guaranteeing delivery, script/CLI callers that need the
-# evaluation to land get an explicit, opt-in flush() instead.
+# An atexit hook cannot make delivery reliable: litellm's sync HTTP calls run on
+# asyncio's default executor, which concurrent.futures' own process-wide shutdown hook
+# tears down before this module's atexit callback can run, so pending judge calls fail
+# with "cannot schedule new futures after interpreter shutdown". Script/CLI callers that
+# need the evaluation to land use the explicit, opt-in flush() instead.
 _pending_futures: "set[concurrent.futures.Future]" = set()
 _pending_lock = threading.Lock()
 

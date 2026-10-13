@@ -361,17 +361,14 @@ class RAGEvaluator:
                 # thinking_budget=0 disables Gemini's internal "thinking" pass.
                 # Without it, some Gemini models (flash variants especially) spend
                 # part/all of their output token budget on invisible thinking tokens
-                # and return empty text — confirmed live via usage_metadata:
-                # thoughts_token_count=191 vs candidates_token_count=2 on a plain
-                # groundedness prompt against gemini-flash-latest. This judge only
-                # ever needs a single float, so there's no real reasoning task here
-                # for "thinking" to help with anyway.
+                # and return empty text (thoughts_token_count far above
+                # candidates_token_count). This judge only ever needs a single float,
+                # so "thinking" adds nothing here.
                 cfg_kwargs: Dict[str, Any] = {"temperature": 0.0}
                 if use_thinking:
                     cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-                # One retry for transient 503 UNAVAILABLE — confirmed live against
-                # gemini-flash-latest during Google-side overload; not specific to
-                # any one model, just Google's servers being momentarily saturated.
+                # One retry for a transient 503 UNAVAILABLE (provider-side overload;
+                # not specific to any one model).
                 last_err: Optional[Exception] = None
                 # Extra attempts only when several keys are configured: a rate-limited
                 # key is parked and the next attempt leases another.
@@ -411,13 +408,10 @@ class RAGEvaluator:
                 try:
                     resp = await _call(use_thinking=True)
                 except Exception as e:
-                    # Some Gemini model variants — confirmed live on
-                    # gemini-flash-lite-latest and gemini-3.5-flash-lite — reject
-                    # thinking_config outright with 400 INVALID_ARGUMENT rather than
-                    # just ignoring it (non-"lite" flash/pro models accept it fine).
-                    # Rather than hardcode which model names support it, retry once
-                    # without thinking_config and only fail the judge if that also
-                    # errors.
+                    # Some Gemini model variants (the "lite" ones) reject thinking_config
+                    # with 400 INVALID_ARGUMENT instead of ignoring it. Rather than
+                    # hardcode which model names support it, retry once without
+                    # thinking_config and only fail the judge if that also errors.
                     if "INVALID_ARGUMENT" in str(e) or "400" in str(e):
                         log.info(
                             "gemini judge %s rejected thinking_config, retrying without it: %s",
@@ -623,11 +617,10 @@ class RAGEvaluator:
         `model` here is caller-supplied (LogRequest/ScoreRequest.model describes whatever
         pipeline produced the answer being scored, not one of the fixed JUDGE_MODELS), so it
         isn't guaranteed to arrive in this table's "provider/model" form — a caller reasonably
-        passes the bare name their own SDK uses, e.g. "gpt-4o" instead of "openai/gpt-4o". Every
-        real query was landing here as a silent $0.0000, indistinguishable from a genuinely free
-        call, because of this exact-match requirement. Try the bare name under each known
-        provider prefix, and the reverse (strip a prefix the caller did include), before giving
-        up and reporting $0.
+        passes the bare name their own SDK uses, e.g. "gpt-4o" instead of "openai/gpt-4o". An
+        exact-match lookup alone would report such calls as $0.0000, so the bare name is tried
+        under each known provider prefix, and the reverse (strip a prefix the caller did
+        include), before reporting $0.
         """
         prices = {**GROQ_PRICES, **ANTHROPIC_PRICES, **OPENAI_PRICES, **GEMINI_PRICES}
         resolved = prices.get(model)

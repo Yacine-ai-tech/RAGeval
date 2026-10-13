@@ -143,8 +143,8 @@ test.describe('RAGeval API Validation', () => {
     }).catch(() => null);
 
     if (!resp) return;
-    // 503 is a valid, honest outcome here: fewer than 2 judges configured on this
-    // deployment raises rather than silently scoring on 0-1 judges (see evaluator.py).
+    // 503 is a valid outcome: with fewer than 2 judges configured the service refuses
+    // to score rather than scoring on 0-1 judges (see evaluator.py).
     expect([200, 401, 403, 503]).toContain(resp.status());
     if (resp.status() === 200) {
       const body = await resp.json();
