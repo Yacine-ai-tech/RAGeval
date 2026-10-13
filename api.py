@@ -265,22 +265,26 @@ def _send_telemetry():
     except Exception:
         pass
 
-    telemetry_url = os.environ.get("TELEMETRY_URL", DEFAULT_TELEMETRY_URL).strip()
+    telemetry_url = (os.environ.get("TELEMETRY_URL") or DEFAULT_TELEMETRY_URL).strip()
     if not telemetry_url:
         return
     try:
-        requests.post(
-            telemetry_url,
-            json={
-                "service": "RAGeval",
-                "event": "startup",
-                "version": "0.2.1",
-                "instance_id": _telemetry_instance_id(),
-            },
-            timeout=3,
-        )
+        from importlib.metadata import version as _pkg_version
+        _version = _pkg_version("omnismart-rageval")
     except Exception:
-        pass
+        _version = "unknown"
+    payload = {
+        "service": "RAGeval",
+        "event": "startup",
+        "version": _version,
+        "instance_id": _telemetry_instance_id(),
+    }
+    for attempt in range(3):
+        try:
+            requests.post(telemetry_url, json=payload, timeout=3)
+            break
+        except Exception:
+            time.sleep(2 * (attempt + 1))
 
 
 threading.Thread(target=_send_telemetry, daemon=True).start()

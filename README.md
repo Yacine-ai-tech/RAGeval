@@ -154,5 +154,8 @@ generated install identifier that is not derived from any hardware identifier. I
 API keys, prompts, judge scores or application data. The receiving endpoint sees the request's
 network metadata, as any HTTP server does.
 
-The ping is on by default. Set `TELEMETRY_OPT_OUT=true` (or `DO_NOT_TRACK=1`) to disable it, or set
-`TELEMETRY_URL` to send it to an endpoint you operate.
+The ping is on by default and fires once when the API server starts or, for library use, on the first
+interaction logged in a process. `TELEMETRY_URL` redirects it to an endpoint you operate (an empty
+value means the default); `TELEMETRY_OPT_OUT=true` or `DO_NOT_TRACK=1` disables it.
+
+![views](https://gateway.ysiddo-ai-projects.app/pixel/readme/RAGeval.png)
