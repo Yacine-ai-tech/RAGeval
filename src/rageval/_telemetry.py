@@ -43,6 +43,20 @@ def _instance_id() -> str:
     return new_id
 
 
+
+def _pyproject_version(pkg_name):
+    import re
+    here = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(5):
+        cand = os.path.join(here, "pyproject.toml")
+        if os.path.exists(cand):
+            m = re.search(r'(?m)^version\s*=\s*"([^"]+)"', open(cand).read())
+            if m:
+                return m.group(1)
+        here = os.path.dirname(here)
+    return "unknown"
+
+
 def _send() -> None:
     flag = os.environ.get("TELEMETRY_OPT_OUT", "").strip().lower()
     if flag in ("1", "true", "yes") or os.environ.get("DO_NOT_TRACK", "").strip() == "1":
@@ -61,7 +75,7 @@ def _send() -> None:
 
         ver = version("omnismart-rageval")
     except Exception:
-        ver = "unknown"
+        ver = _pyproject_version("omnismart-rageval")
     payload = {"service": "RAGeval", "event": "startup", "version": ver, "instance_id": _instance_id()}
     import requests
 
