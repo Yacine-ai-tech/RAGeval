@@ -236,6 +236,12 @@ def _ensure_initialized() -> None:
         with _init_lock:
             if not _initialized:
                 init_rageval_table()
+        try:
+            from ._telemetry import send_startup_ping
+
+            send_startup_ping()
+        except Exception:
+            pass
 
 
 def _write_interaction_sync(
