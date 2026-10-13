@@ -142,45 +142,53 @@ def test_eval_score_returns_503_when_insufficient_judges(monkeypatch):
     assert "judge" in r.json()["detail"].lower()
 
 
-# ─── GET routes stay open to the browser regardless of the token gate ─────────
+# ─── Reads require the token too; the gateway attaches it for the dashboard ───
 
-def test_get_eval_routes_accessible_without_internal_token(monkeypatch):
-    """GET /eval/* endpoints must NOT be blocked by the middleware even when
-    REQUIRE_INTERNAL_TOKEN=true. These routes feed the browser dashboard — any
-    403 here means the entire UI shows empty data.
-
-    Regression coverage: /eval/metrics, /eval/queries, /eval/alerts, /eval/config,
-    /eval/events, /eval/cost-report must all pass through GET requests regardless
-    of the token.
-    """
-    import pytest
+def _gated_client(monkeypatch):
     monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "true")
     monkeypatch.setenv("RAGEVAL_INTERNAL_TOKEN", "secret-sentinel-value")
-    # Reload api so the middleware picks up the new env values.
     import importlib
     import api as api_mod
     importlib.reload(api_mod)
-    client = TestClient(api_mod.app, raise_server_exceptions=False)
+    return TestClient(api_mod.app, raise_server_exceptions=False)
 
-    get_routes = [
-        "/eval/metrics?days=7",
-        "/eval/queries?limit=5",
-        "/eval/alerts",
-        "/eval/config",
-        "/eval/events",
-        "/eval/cost-report?days=7",
-    ]
-    for route in get_routes:
-        r = client.get(route)  # No X-RAGeval-Internal-Token header.
-        assert r.status_code != 403, (
-            f"{route} returned 403 to a browser GET with no token. "
-            "Dashboard will show empty data in production."
-        )
+
+READ_ROUTES = [
+    "/eval/metrics?days=7",
+    "/eval/queries?limit=5",
+    "/eval/alerts",
+    "/eval/config",
+    "/eval/events",
+    "/eval/cost-report?days=7",
+]
+
+
+def test_get_eval_routes_blocked_without_internal_token(monkeypatch):
+    client = _gated_client(monkeypatch)
+    for route in READ_ROUTES:
+        r = client.get(route)
+        assert r.status_code == 403, f"{route} answered {r.status_code} to a caller with no token"
+
+
+def test_get_eval_routes_open_with_internal_token(monkeypatch):
+    client = _gated_client(monkeypatch)
+    for route in READ_ROUTES:
+        r = client.get(route, headers={"X-RAGeval-Internal-Token": "secret-sentinel-value",
+                                       "X-Demo-Session-Id": "audit-session"})
+        assert r.status_code == 200, f"{route} -> {r.status_code}"
+
+
+def test_unassigned_session_reads_nothing(monkeypatch):
+    client = _gated_client(monkeypatch)
+    r = client.get("/eval/queries?limit=5", headers={"X-RAGeval-Internal-Token": "secret-sentinel-value"})
+    assert r.status_code == 200 and r.json() == []
+    r = client.get("/eval/alerts", headers={"X-RAGeval-Internal-Token": "secret-sentinel-value"})
+    assert r.json() == {"flagged_count": 0, "alerts": []}
 
 
 def test_post_eval_blocked_without_internal_token(monkeypatch):
     """POST /eval/score and POST /eval/log must still require the token
-    when REQUIRE_INTERNAL_TOKEN=true — only GETs are open to the browser."""
+    when REQUIRE_INTERNAL_TOKEN=true — reads are gated as well."""
     monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "true")
     monkeypatch.setenv("RAGEVAL_INTERNAL_TOKEN", "secret-sentinel-value")
     import importlib
