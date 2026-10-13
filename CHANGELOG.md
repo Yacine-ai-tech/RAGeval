@@ -144,7 +144,7 @@
 - Embedding `rageval` as a library inside a host app that has its own `POSTGRES_URL` for
   its own unrelated database will make `rageval` try to write to *that* database instead
   of SQLite — `rageval._compat.settings.POSTGRES_URL` reads the same generic env var
-  name, so it collides whenever both use the convention. Workaround for now: unset/blank
+  name, so it collides whenever both use the convention. Workaround: unset/blank
   `POSTGRES_URL` before importing `rageval`, or point it at a database that actually has
   the `rageval_log` schema. A `RAGEVAL_POSTGRES_URL`-prefixed override would fix this
   properly but changes the existing `.env.example` contract, so it's flagged rather than

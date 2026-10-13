@@ -78,7 +78,7 @@ export default function UserGuidePage() {
             another: consensus requires at least 2 judges to actually respond, both in how many are
             configured and how many are reachable at score time. Fall short of that and{' '}
             <code className="text-green-300">/eval/score</code> and{' '}
-            <code className="text-green-300">/eval/log</code> return an honest 503 instead of a quietly
+            <code className="text-green-300">/eval/log</code> return an explicit 503 instead of a quietly
             degraded single-judge (or zero-judge) score.
           </p>
           <p>
@@ -205,7 +205,7 @@ async def answer_question(query: str, context_chunks: list[str]) -> str:
           <p>
             RAGeval is a small, self-hosted, single-purpose tool — not a bid to replace the larger
             observability platforms in this space (Phoenix, Langfuse, TruLens, and similar). Where it
-            tries to differentiate honestly:
+            tries to differentiate:
           </p>
           <ul className="list-disc list-inside space-y-1 ml-2">
             <li>SQLite-default — a working setup in about 60 seconds, no database to stand up first.</li>

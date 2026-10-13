@@ -29,7 +29,7 @@ export default function Evaluate() {
 
   // The judge panel is a multi-model consensus call (LONG_TIMEOUT_CAPABILITIES on
   // the orchestrator) — a cold judge endpoint can take well past a bare spinner's
-  // patience. A running elapsed-time counter is the honest signal.
+  // patience. A running elapsed-time counter is the clearest signal.
   useEffect(() => {
     if (!busy) return;
     const startedAt = Date.now();
