@@ -33,8 +33,7 @@ _DEFAULT_JUDGE_MODELS = (
     "gemini/gemini-3.6-flash,"
     "groq/openai/gpt-oss-120b"
 )
-# gemini-2.5-flash was retired by Google (404 on every call, confirmed live
-# 2026-09-24) — keep in sync with core/config.py.
+# gemini-2.5-flash is retired and intentionally absent — keep in sync with core/config.py.
 
 
 class _Settings:
