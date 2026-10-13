@@ -30,9 +30,9 @@ def _timeout_env(name: str, default: float, maximum: float) -> float:
 
 
 try:
-    # NOTE: sentence_transformers pulls in torch (~400MB resident) — importing it at module load
-    # OOMs small (512MB) hosts before the app can even serve /health. So we import only the light
-    # deps here and defer the heavy SentenceTransformer import into _ensure_embedder() (lazy).
+    # NOTE: sentence_transformers pulls in torch (~400MB resident), so importing it at module
+    # load would delay startup. Only the light deps are imported here; the heavy
+    # SentenceTransformer import is deferred into _ensure_embedder() (lazy).
     from sklearn.metrics.pairwise import cosine_similarity
     import numpy as np
     _ST = True
@@ -126,12 +126,12 @@ class RAGEvaluator:
     def __init__(self, embedding_model: Optional[str] = None):
         self.embedding_model_name = embedding_model or settings.EMBEDDING_MODEL
         self._embedder = None
+        self._served_by: Dict[str, str] = {}
 
     def _ensure_embedder(self):
-        # Local SentenceTransformer (torch ~400MB resident) is OFF by default: loading it on a
-        # 512MB host OOM-crashes the process (the /eval/score 502 we hit). Embedding scorers run
-        # via the remote inference backend (see _embed); set USE_LOCAL_EMBEDDER=true only where
-        # there's RAM headroom.
+        # Local SentenceTransformer (torch ~400MB resident) is off by default. Embedding
+        # scorers run via the remote inference backend (see _embed); set
+        # USE_LOCAL_EMBEDDER=true where the process has memory headroom.
         if not _ST:
             return None
         if os.getenv("USE_LOCAL_EMBEDDER", "false").strip().lower() not in ("1", "true", "yes", "on"):
@@ -456,6 +456,7 @@ class RAGEvaluator:
                 fallback_model = os.getenv("LLM_JUDGE_FALLBACK", "")
                 if is_auth and fallback_model and fallback_model != model:
                     log.warning("judge %s auth failed — retrying with fallback %s", model, fallback_model)
+                    self._served_by[model] = fallback_model
                     try:
                         resp = await asyncio.wait_for(
                             keypool.acompletion_pooled(
@@ -520,9 +521,12 @@ class RAGEvaluator:
             )
 
         async def _run_judge(model):
+            self._served_by.pop(model, None)
             s = await self._judge_groundedness(answer, context, model=model)
             if s is not None:
-                return {"model": model, "score": s}
+                # `model` is the configured judge; `answered_by` is the model that
+                # actually produced the score (they differ when a fallback served it).
+                return {"model": model, "score": s, "answered_by": self._served_by.pop(model, model)}
             return None
 
         results = await asyncio.gather(*[_run_judge(model) for model in settings.JUDGE_MODELS])
@@ -578,6 +582,8 @@ class RAGEvaluator:
             "symbolic_judge": panel[-1] if (settings.RAGEVAL_INCLUDE_SYMBOLIC_JUDGE and context) else None,
             "aggregation_strategy": strategy,
             "judges_used": len(scores),
+            "distinct_models": len({r.get("answered_by", r["model"]) for r in scores}),
+            "panel_degraded": any(r.get("answered_by", r["model"]) != r["model"] for r in scores),
             "flag_for_review": stdev > 0.2,
         }
 
