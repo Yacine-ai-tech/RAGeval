@@ -222,7 +222,7 @@ async def answer_question(query: str, context_chunks: list[str]) -> str:
 
         {/* PyPI / self-hosting */}
         <Section icon={Package} iconColor="text-indigo-400" title="Installation & Self-Hosting">
-          <Code>{`pip install omnismart-rageval   # version 0.1.27 — import name stays \`rageval\`
+          <Code>{`pip install omnismart-rageval   # import name stays \`rageval\`
 
 rageval init                    # creates ~/.rageval/rageval.db
 rageval serve --port 8003       # requires the [server] extra (uvicorn)`}</Code>
@@ -248,7 +248,7 @@ pip install "omnismart-rageval[all]"      # everything`}</Code>
             </li>
             <li className="flex items-start gap-2">
               <CheckCircle className="w-5 h-5 text-green-400 shrink-0 mt-0.5" />
-              <span>The server sends an anonymous startup ping (timestamp + anonymized instance id, no prompts or keys) to help gauge usage. Set <code className="text-green-300">TELEMETRY_OPT_OUT=true</code> to disable it.</span>
+              <span>The server sends one anonymous startup ping (service name, version and a random install id; no prompts or keys) to help gauge usage. Set <code className="text-green-300">TELEMETRY_OPT_OUT=true</code> to disable it.</span>
             </li>
             <li className="flex items-start gap-2">
               <CheckCircle className="w-5 h-5 text-green-400 shrink-0 mt-0.5" />
