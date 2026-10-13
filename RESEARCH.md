@@ -1,8 +1,8 @@
 # Research Background
 
-This document explains the reasoning behind two of RAGeval's core design choices — using an
-LLM as the groundedness/faithfulness judge, and using a panel of judges rather than one — and
-situates the project relative to the broader RAG-evaluation research landscape. Empirical
+This document explains the reasoning behind two of RAGeval's core design choices, using an
+LLM as the groundedness and faithfulness judge and using a panel of judges rather than one,
+and places the project in the wider RAG-evaluation research landscape. Empirical
 validation of these choices is in [`eval/JUDGE_BENCHMARK.md`](eval/JUDGE_BENCHMARK.md) and
 [`BENCHMARK.md`](BENCHMARK.md).
 
@@ -29,11 +29,11 @@ assesses entailment — rather than relying on similarity alone.
 Using an LLM to grade another LLM's output ("LLM-as-a-judge") is itself an established
 technique, but a single judge model carries documented biases:
 
-- **Verbosity bias** — rating longer, more elaborated answers as better independent of
+- **Verbosity bias**: rating longer, more elaborated answers as better regardless of
   correctness.
-- **Self-preference bias** — favoring outputs that resemble the judge's own style or model
+- **Self-preference bias**: favoring outputs that resemble the judge's own style or model
   family.
-- **Position bias** — in pairwise comparisons, favoring whichever answer is presented first.
+- **Position bias**: in pairwise comparisons, favoring whichever answer is presented first.
 
 These are widely discussed failure modes in the 2023–2026 LLM-evaluation literature. A
 recognized mitigation is a panel of several judge models — often smaller or cheaper ones —
@@ -146,10 +146,10 @@ generated output against an authorization boundary — borrows from role-based a
 (RBAC), a decades-old access-control model (Ferraiolo & Kuhn, 1992), applied here to LLM
 output rather than a data store.
 
-None of the general-purpose RAG-evaluation frameworks cited below (RAGAS, ARES, TruLens) or the
-observability platforms (Phoenix, Langfuse, DeepEval) ship a persona/role-scope axis alongside
-groundedness, which makes this a genuinely distinctive feature of RAGeval rather than a
-reimplementation of existing tooling. The implementation itself is a lightweight, explainable
+To our knowledge, none of the general-purpose RAG-evaluation frameworks cited below (RAGAS,
+ARES, TruLens) or the observability platforms (Phoenix, Langfuse, DeepEval) ship a
+persona or role-scope axis alongside groundedness as of this writing, so this is not a
+reimplementation of existing tooling. Tools change quickly; check their current documentation. The implementation itself is a lightweight, explainable
 heuristic — matching an answer's sentences against a per-domain term list
 (`PERSONA_DOMAINS`/`DOMAIN_TERMS` in `evaluator.py`) — not a trained classifier, and RAGeval
 does not yet publish a labeled dataset measuring that heuristic's own precision and recall as a
