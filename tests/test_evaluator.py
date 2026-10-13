@@ -248,9 +248,9 @@ def test_persona_scope_flags_still_catches_real_violations():
 # ─── Faithfulness sentence splitting on decimals ───────────────────────────────
 
 def test_faithfulness_sentence_split_preserves_decimals():
-    """The sentence splitter used to split '$4.2M' into '$4' and '2M', and '3.14%'
-    into '3' and '14%'. The split must only occur at sentence-ending punctuation
-    that is NOT surrounded by digits."""
+    """The sentence splitter must not split '$4.2M' into '$4' and '2M', or '3.14%' into
+    '3' and '14%': a split may only occur at sentence-ending punctuation that is NOT
+    surrounded by digits."""
     import re
     # Replicate the fixed split logic from evaluator.py.
     answer = "Revenue was $4.2M. Margin improved by 3.14%. Headcount: 350."
