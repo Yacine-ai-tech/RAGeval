@@ -294,18 +294,10 @@ threading.Thread(target=_send_telemetry, daemon=True).start()
 
 @app.middleware("http")
 async def verify_internal_token(request: Request, call_next):
-    """Token gate for service-to-service calls.
-
-    The /eval/* API prefix is explicitly allowed through for browser clients
-    (GET endpoints). Only write endpoints that could drain LLM quota (POST
-    /eval/log, POST /eval/score, POST /eval/retrieval-bench, POST
-    /eval/embedding-comparison) require the internal token when
-    REQUIRE_INTERNAL_TOKEN=true is set.
-
-    This two-tier policy lets:
-    - The dashboard (browser, no token) read all GET /eval/* data freely.
-    - Trusted service-to-service callers (with the token) write evaluations.
-    - External @track integrations (pip users) POST with the token.
+    """Token gate: every API route, reads and writes, requires the internal token when
+    REQUIRE_INTERNAL_TOKEN=true. Only the health check, API docs and static assets are
+    open. The dashboard reaches the API through the gateway, which attaches the token and
+    the visitor's session header, and reads are scoped to that session.
     """
     path = request.url.path
     method = request.method
@@ -321,18 +313,14 @@ async def verify_internal_token(request: Request, call_next):
     if _public:
         return await call_next(request)
 
-    # All GET /eval/* routes are readable without the token
-    # (they are displayed in the public-facing browser dashboard).
-    # Only POST (write/score) routes require the internal token.
-    _eval_get = path.startswith("/eval/") and method == "GET"
-    if _eval_get:
-        return await call_next(request)
-
-    # WebSocket /eval/live — no token needed (real-time dashboard feed).
+    # Every API route (reads included) requires the internal token when
+    # REQUIRE_INTERNAL_TOKEN=true. The browser dashboard reaches this service through
+    # the gateway, which attaches the token and the visitor's session header; a direct
+    # caller without the token gets nothing.
+    # WebSocket /eval/live is session-scoped inside its own handler.
     if path == "/eval/live":
         return await call_next(request)
 
-    # POST/write routes: enforce token when REQUIRE_INTERNAL_TOKEN=true.
     token = (
         request.headers.get("X-RAGeval-Internal-Token")
         or request.headers.get("X-Internal-Token")
@@ -646,9 +634,14 @@ async def eval_config() -> Dict[str, Any]:
     }
 
 
+_UNASSIGNED = "anonymous_unassigned"
+
+
 @app.get("/eval/metrics")
 async def eval_metrics(request: Request, days: int = Query(default=7, ge=1, le=365)) -> Dict[str, Any]:
     sess = _resolve_session_id(request)
+    if sess == _UNASSIGNED:
+        return get_metrics(days=days, session_id="__none__", include_seed=False)
     return get_metrics(days=days, session_id=sess, include_seed=(sess == "*"))
 
 
@@ -659,18 +652,24 @@ async def eval_queries(
     needs_review: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
     sess = _resolve_session_id(request)
+    if sess == _UNASSIGNED:
+        return []
     return get_query_log(limit=limit, needs_review=needs_review, session_id=sess, include_seed=(sess == "*"))
 
 
 @app.get("/eval/cost-report")
 async def eval_cost_report(request: Request, days: int = Query(default=30, ge=1, le=365)) -> Dict[str, Any]:
     sess = _resolve_session_id(request)
+    if sess == _UNASSIGNED:
+        return get_cost_report(days=days, session_id="__none__", include_seed=False)
     return get_cost_report(days=days, session_id=sess, include_seed=(sess == "*"))
 
 
 @app.get("/eval/alerts")
 async def eval_alerts(request: Request) -> Dict[str, Any]:
     sess = _resolve_session_id(request)
+    if sess == _UNASSIGNED:
+        return {"flagged_count": 0, "alerts": []}
     flagged = get_query_log(limit=50, needs_review=True, session_id=sess, include_seed=(sess == "*"))
     return {"flagged_count": len(flagged), "alerts": flagged[:10]}
 
