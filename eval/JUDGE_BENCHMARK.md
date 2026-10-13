@@ -57,7 +57,7 @@ more useful by-product: it can be used to route uncertain samples to a person.
 **Other limitations worth naming plainly:** this remains a single dataset (HaluEval-QA has its own
 generation biases — hallucinated answers are synthetically constructed, which may make them easier
 or harder to catch than naturally occurring hallucinations); this reflects one point in time against
-specific judge-model versions and provider quota states, which will drift — including the panel
+specific judge-model versions and provider availability, which will drift — including the panel
 composition itself, which has changed since the first attempt at this run; and the judge weights are themselves derived from measured
 accuracy on this same dataset, so the weighted-consensus number is not fully independent of the
 per-judge accuracy numbers it's being compared against.

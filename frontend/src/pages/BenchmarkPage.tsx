@@ -46,8 +46,8 @@ export default function BenchmarkPage() {
               <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">JUDGE_MODELS</code> panel — Claude Haiku 4.5, Groq{' '}
               <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">gpt-oss-120b</code>, GPT-5-mini, and Gemini 3.5 Flash.{' '}
               <span className="font-medium text-body">What actually responded:</span> all four judges answered all
-              200 examples — no quota exhaustion during this run. An earlier attempt at this benchmark had two of
-              four judges largely absent due to a free-tier quota ceiling; this run supersedes that one. RAGeval
+              200 examples. An earlier attempt at this benchmark had two of four judges largely absent;
+              this run supersedes that one. RAGeval
               never substitutes a different judge or fails the whole call when one is unavailable — it scores from
               however many of the configured judges (minimum 2) actually respond, weighted by each judge's own
               measured accuracy.
@@ -110,7 +110,7 @@ export default function BenchmarkPage() {
               grounded from hallucinated answers well, independent of where the 0.6 decision threshold is drawn.
             </p>
             <p className="mt-2">
-              <span className="font-semibold text-body">Honest caveat:</span> this is a real, moderate-scale result
+              <span className="font-semibold text-body">Limitation:</span> this is a real, moderate-scale result
               (N=200), not yet a large-scale peer-reviewed benchmark. The practical case for the panel isn't
               "highest possible accuracy" — it's fault tolerance (a usable score if any one judge is unavailable)
               plus the disagreement signal (mean stdev 0.217 on wrong predictions vs 0.082 on correct ones), which
@@ -129,8 +129,7 @@ export default function BenchmarkPage() {
             aggregation strategy (majority vote with a minimum-agreement threshold, or weights recalibrated on a
             held-out split rather than the same data being reported on); a second, RAG-specific dataset (e.g.
             RAGTruth) to check whether the judge-strength ordering seen here holds elsewhere; and repeating this
-            run periodically, since provider quota availability and panel composition are not guaranteed to stay
-            this favorable.
+            run periodically, since provider availability and panel composition may change.
           </p>
         </Card>
       </div>
