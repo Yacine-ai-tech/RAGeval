@@ -29,7 +29,7 @@ All contributors agree to foster an open, welcoming, and harassment-free communi
 RAGeval is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
 - **Open Source Contributions**: All submissions become licensed under AGPL-3.0.
-- **Commercial & Enterprise Licensing**: For proprietary RAG pipeline auditing, closed-source enterprise telemetry, or exemption from AGPL-3.0 copyleft obligations, commercial licenses are available through **OmniIntelOS**. See [`COMMERCIAL.md`](./COMMERCIAL.md) or contact `siddoyacinetech227@gmail.com`.
+- **Commercial & Enterprise Licensing**: For proprietary RAG pipeline auditing, closed-source enterprise telemetry, or exemption from AGPL-3.0 copyleft obligations, commercial licenses are available through **OmniIntelOS**. See [`COMMERCIAL.md`](./COMMERCIAL.md) or contact `contact@ysiddo-ai-projects.app`.
 
 ---
 
@@ -117,4 +117,4 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## 🔒 Security & Vulnerability Disclosure
 
-Report vulnerabilities privately via email to `siddoyacinetech227@gmail.com`.
+Report vulnerabilities privately via email to `contact@ysiddo-ai-projects.app`.
