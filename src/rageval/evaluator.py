@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rageval._compat import settings, get_logger  # self-contained (works when pip-installed)
+from rageval import _keypool as keypool
 
 log = get_logger(__name__)
 
@@ -372,11 +373,24 @@ class RAGEvaluator:
                 # gemini-flash-latest during Google-side overload; not specific to
                 # any one model, just Google's servers being momentarily saturated.
                 last_err: Optional[Exception] = None
-                for attempt in range(2):
+                # Extra attempts only when several keys are configured: a rate-limited
+                # key is parked and the next attempt leases another.
+                attempts = max(2, len(keypool.pool("gemini")) + 1)
+                for attempt in range(attempts):
+                    lease = keypool.lease_for_model(model)
+                    active_client = client
+                    if lease is not None:
+                        try:
+                            active_client = genai.Client(api_key=lease.key, http_options={
+                                "api_version": "v1beta",
+                                "timeout": int(judge_timeout * 1000),
+                            })
+                        except Exception:
+                            active_client = client
                     try:
                         return await asyncio.wait_for(
                             asyncio.to_thread(
-                                client.models.generate_content,
+                                active_client.models.generate_content,
                                 model=actual_model,
                                 contents=prompt,
                                 config=types.GenerateContentConfig(**cfg_kwargs),
@@ -385,6 +399,8 @@ class RAGEvaluator:
                         )
                     except Exception as e:
                         last_err = e
+                        if keypool.note_failure(lease, e) and attempt < attempts - 1:
+                            continue  # parked this key; retry immediately on another
                         if attempt == 0 and ("UNAVAILABLE" in str(e) or "503" in str(e)):
                             await asyncio.sleep(1.5)
                             continue
@@ -424,8 +440,9 @@ class RAGEvaluator:
                              "invalid_api_key", "invalid api key")
             try:
                 resp = await asyncio.wait_for(
-                    acompletion(
-                        model=model,
+                    keypool.acompletion_pooled(
+                        acompletion,
+                        model,
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.0,
                         timeout=judge_timeout,
@@ -441,8 +458,9 @@ class RAGEvaluator:
                     log.warning("judge %s auth failed — retrying with fallback %s", model, fallback_model)
                     try:
                         resp = await asyncio.wait_for(
-                            acompletion(
-                                model=fallback_model,
+                            keypool.acompletion_pooled(
+                                acompletion,
+                                fallback_model,
                                 messages=[{"role": "user", "content": prompt}],
                                 temperature=0.0,
                                 timeout=judge_timeout,
