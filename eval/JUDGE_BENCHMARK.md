@@ -5,21 +5,21 @@ al., 2023), a standard hallucination-detection benchmark. Reproducible:
 `python eval/run_judge_benchmark.py --n 100` (needs `ANTHROPIC_API_KEY` and/or `GROQ_API_KEY`,
 plus the `datasets` and `scikit-learn` packages).
 
-The results below reflect an evaluation over N=200 balanced question-answer pairs with all four configured judge architectures responding to every example across the standardized evaluation protocol.
+The results below come from 200 balanced question-answer examples, with all four configured judges responding to every example.
 
 ## Setup
 
 - **Dataset:** HaluEval-QA. Each question yields **2 labelled examples** against the same
   `knowledge` context: the `right_answer` (grounded = 1) and the `hallucinated_answer`
   (grounded = 0).
-- **Judges configured:** a four-judge `JUDGE_MODELS` panel — Claude Haiku 4.5 (`openai/anthropic/claude-haiku-4-5-20251001`), Groq `gpt-oss-120b`, Gemini 3.5 Flash (`gemini/gemini-3.5-flash`), and GPT-5-mini (`openai/gpt-5-mini`), providing heterogeneous model family diversity across Anthropic, Groq LPU, Google, and OpenAI.
+- **Judges configured:** a four-judge `JUDGE_MODELS` panel — Claude Haiku 4.5 (`openai/anthropic/claude-haiku-4-5-20251001`), Groq `gpt-oss-120b`, Gemini 3.5 Flash (`gemini/gemini-3.5-flash`), and GPT-5-mini (`openai/gpt-5-mini`), so the panel mixes model families from Anthropic, Groq, Google and OpenAI.
 - **Decision threshold:** consensus score ≥ 0.6 → classified "grounded".
 - **Sample size:** N = 100 questions → **200 labelled examples** (balanced 100/100 grounded vs
   hallucinated by construction). Zero examples were skipped or failed in this run.
 - **Consensus strategy:** `RAGEvaluator.score_groundedness_consensus` computes an accuracy-weighted
-  mean across all responding judges with dynamic outlier dampening.
+  mean across all responding judges, with each judge weighted by its measured accuracy.
 
-## Results (N=200, 4-Judge Heterogeneous Panel)
+## Results (N=200, four judges)
 
 | Judge / Strategy | Accuracy | Precision | Recall | F1 | n |
 |---|---|---|---|---|---|
@@ -32,30 +32,33 @@ The results below reflect an evaluation over N=200 balanced question-answer pair
 **ROC-AUC (consensus score):** 0.902 — the raw consensus score separates grounded from
 hallucinated answers with high fidelity, independent of decision threshold placement.
 
-**Consensus Performance & Resilience:**
-The accuracy-weighted multi-judge consensus achieves **0.860 accuracy** and **0.902 ROC-AUC**, effectively mirroring the top individual frontier models while eliminating reliance on any single provider. Weighting each vote by historical precision dampens variance from individual models. Most critically, the multi-judge architecture delivers two capabilities inaccessible to any monolithic judge:
-1. **Fault-Tolerant High Availability**: Zero single point of failure; consensus evaluates successfully even if any single provider experiences downtime or transient rate limits.
-2. **Uncertainty Quantification**: Inter-judge disagreement directly signals edge cases and provides calibrated confidence scores for human-in-the-loop review.
+**Reading the result.** The accuracy-weighted consensus reaches 0.860 accuracy and 0.902
+ROC-AUC. That is level with the second-best judge and below the best one (Gemini 3.5 Flash,
+0.885), so on this dataset the panel does not improve on its strongest member. What it adds is
+operational: the consensus still produces a score when one provider is down or rate limited, as
+long as at least two judges respond, and the spread between judges is available as a review
+signal.
 
 ### Disagreement predicts errors
 
 Mean judge-disagreement (standard deviation across the 4 judges' scores for a given example) is
-clearly higher on ambiguous/incorrect predictions than on concordant ones:
+higher on incorrect predictions than on correct ones:
 
 - Mean stdev on **correct** predictions (172/200): `0.082`
 - Mean stdev on **divergent** predictions (28/200): `0.217`
 
-Flagging any answer with stdev > 0.2 for human review provides a reliable heuristic: inter-judge divergence is an empirical indicator that an edge case requires human verification, independent of the raw consensus score.
+Flagging answers with a standard deviation above 0.2 for human review is a workable heuristic on this dataset: judge divergence was associated with errors independently of the raw consensus score. The threshold was chosen after looking at these numbers and has not been validated on held-out data.
 
-### Summary Analysis
-The measured accuracy-weighted consensus demonstrates robust hallucination detection on HaluEval-QA. The inter-judge disagreement standard deviation acts as a calibrated confidence estimator, enabling downstream systems to route uncertain samples to human review or higher-latency reasoning verification.
+### Summary
+On HaluEval-QA the accuracy-weighted consensus detects hallucinations well (0.860 accuracy,
+0.902 ROC-AUC) but not better than the best single judge. The disagreement between judges is the
+more useful by-product: it can be used to route uncertain samples to a person.
 
 **Other limitations worth naming plainly:** this remains a single dataset (HaluEval-QA has its own
 generation biases — hallucinated answers are synthetically constructed, which may make them easier
 or harder to catch than naturally occurring hallucinations); this reflects one point in time against
 specific judge-model versions and provider quota states, which will drift — including the panel
-composition itself, which has already changed once (see the shipped-default note in Setup above)
-since the first attempt at this run; and the judge weights are themselves derived from measured
+composition itself, which has changed since the first attempt at this run; and the judge weights are themselves derived from measured
 accuracy on this same dataset, so the weighted-consensus number is not fully independent of the
 per-judge accuracy numbers it's being compared against.
 
