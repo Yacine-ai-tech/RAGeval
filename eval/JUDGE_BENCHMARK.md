@@ -19,7 +19,7 @@ The results below come from 200 balanced question-answer examples, with all four
 - **Consensus strategy:** `RAGEvaluator.score_groundedness_consensus` computes an accuracy-weighted
   mean across all responding judges, with each judge weighted by its measured accuracy.
 
-## Results (N=200, four judges)
+## Results (N=200, 4-Judge Heterogeneous Panel)
 
 | Judge / Strategy | Accuracy | Precision | Recall | F1 | n |
 |---|---|---|---|---|---|
