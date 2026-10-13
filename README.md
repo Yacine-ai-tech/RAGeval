@@ -148,7 +148,11 @@ such as SSO and custom RBAC is available: see [COMMERCIAL.md](COMMERCIAL.md).
 
 ## Anonymous Telemetry
 
-RAGeval sends a single anonymous startup ping, at most once per six hours per running
-instance: a timestamp and a randomly generated install identifier, not derived from any
-hardware identifier — no API keys, prompts, judge scores, or application data. Destination is
-the `TELEMETRY_URL` environment variable; `TELEMETRY_OPT_OUT=true` disables it outright.
+On startup RAGeval sends one small ping, at most once every 30 seconds per instance, that
+contains the service name, the event name (`startup`), the version string and a randomly
+generated install identifier that is not derived from any hardware identifier. It never contains
+API keys, prompts, judge scores or application data. The receiving endpoint sees the request's
+network metadata, as any HTTP server does.
+
+The ping is on by default. Set `TELEMETRY_OPT_OUT=true` (or `DO_NOT_TRACK=1`) to disable it, or set
+`TELEMETRY_URL` to send it to an endpoint you operate.
