@@ -30,7 +30,12 @@ def test_health():
     assert r.status_code == 200 and r.json()["service"] == "rageval"
 
 
-def test_ready_checks_the_database():
+def test_ready_checks_the_database_and_the_embedder(monkeypatch):
+    import api as api_mod
+
+    monkeypatch.setattr(api_mod, "_embedder_ready", __import__("threading").Event())
+    assert _client().get("/ready").status_code == 503
+    api_mod._embedder_ready.set()
     r = _client().get("/ready")
     assert r.status_code == 200
     assert r.json()["status"] == "ready"

@@ -305,7 +305,7 @@ async def verify_internal_token(request: Request, call_next):
     # Always pass: OPTIONS (CORS preflight), docs, static SPA assets, health.
     _public = (
         method == "OPTIONS"
-        or path in {"/", "/health", "/docs", "/openapi.json", "/api/redoc",
+        or path in {"/", "/health", "/ready", "/docs", "/openapi.json", "/api/redoc",
                     "/favicon.png", "/favicon.ico", "/mark.png", "/logo.png"}
         or path.startswith("/assets/")
         or path.startswith("/static/")
@@ -524,8 +524,28 @@ async def health() -> Dict[str, Any]:
     return {"status": "ok", "service": "rageval", "version": _VERSION}
 
 
+_embedder_ready = threading.Event()
+
+
+def _warm_embedder() -> None:
+    """Load (or reach) the embedding backend once at startup so scoring never pays for it."""
+    try:
+        evaluator._embed(["warm-up"])
+    except Exception as exc:
+        log.warning("embedding warm-up failed: %s", exc)
+    finally:
+        _embedder_ready.set()
+
+
+@app.on_event("startup")
+async def _start_warm_up() -> None:
+    threading.Thread(target=_warm_embedder, daemon=True, name="embedder-warmup").start()
+
+
 @app.get("/ready")
 async def ready() -> Dict[str, Any]:
+    if not _embedder_ready.is_set():
+        raise HTTPException(status_code=503, detail="warming_up")
     try:
         await asyncio.to_thread(check_database)
     except Exception as e:
