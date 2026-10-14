@@ -14,8 +14,8 @@ COPY . .
 
 EXPOSE 8003
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD python3 -c "import os,urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\",8003)}/health', timeout=5)" || exit 1
+HEALTHCHECK --interval=15s --timeout=10s --start-period=180s --retries=3 \
+    CMD python3 -c "import os,urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\",8003)}/ready', timeout=5)" || exit 1
 
 # Honor a platform-injected $PORT (common on managed container hosts); default 8003 locally.
 # exec via sh so $PORT expands AND uvicorn becomes PID 1 (clean SIGTERM shutdown).
