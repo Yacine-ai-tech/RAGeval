@@ -1,9 +1,10 @@
 import UserGuidePage from './pages/UserGuidePage'
 import BenchmarkPage from './pages/BenchmarkPage';
 import ResearchPage from './pages/ResearchPage';
+import ArchitecturePage from './pages/ArchitecturePage';
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
-import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark, BookOpen, Award, GraduationCap } from "lucide-react";
+import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark, BookOpen, Award, GraduationCap, Workflow } from "lucide-react";
 import { AppShell } from "./kit/AppShell";
 import { WakingBackend } from "./kit/misc";
 import { Skeleton } from "./kit/primitives";
@@ -27,6 +28,7 @@ const NAV = [
   { to: "/traces", label: "Live Traces", icon: RadioTower },
   { to: "/evaluate", label: "Evaluate", icon: FlaskConical },
   { to: "/experiments", label: "Experiments", icon: Beaker },
+  { to: "/architecture", label: "Architecture", icon: Workflow },
   { to: "/research", label: "Research", icon: GraduationCap },
   { to: "/benchmark", label: "Benchmark", icon: Award },
   { to: "/saved", label: "Saved", icon: Bookmark },
@@ -75,6 +77,7 @@ export default function App() {
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/instrumentation" element={<Instrumentation />} />
               <Route path="/api-docs" element={<ApiDocs />} />
+              <Route path="/architecture" element={<ArchitecturePage />} />
               <Route path="/research" element={<ResearchPage />} />
               <Route path="/benchmark" element={<BenchmarkPage />} />
               <Route path="/benchmarks" element={<Navigate to="/benchmark" replace />} />
