@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.3] - 2026-10-14
 ### Added
 - Provider key pool: several API keys per provider are discovered from the environment
   (`<PROVIDER>_API_KEY`, `<PROVIDER>_API_KEY_<n>` or a comma-separated `<PROVIDER>_API_KEYS`),
