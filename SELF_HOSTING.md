@@ -111,7 +111,21 @@ RAGeval-specific variable.
 
 The API bootstraps/migrates the configured schema before serving. A failed bootstrap aborts startup
 instead of being logged and ignored. Use `/health` for process liveness and `/ready` for database
-readiness; deployments should gate traffic on `/ready`.
+readiness; deployments should gate traffic on `/ready`. `/ready` also reports `warming_up` (503) until
+the embedding backend has loaded, so the first scoring request never waits for model load.
+
+### Embedding backend
+
+Choose exactly one mode; RAGeval never swaps silently, because a different embedding model changes
+retrieval-relevance numbers.
+
+| Mode | Variables | Notes |
+|---|---|---|
+| Local | `USE_LOCAL_EMBEDDER=true`, `EMBEDDING_MODEL` | loads the model in the API process (needs `sentence-transformers`; hundreds of MB resident) |
+| Remote | `INFERENCE_MODE=remote`, `EMBEDDING_ENDPOINT`, `INFERENCE_TOKEN` | a `huggingface.co` URL uses the native feature-extraction shape; any other URL receives `POST {url}/embed` with `{"texts": [...], "model": "..."}` and returns `{"embeddings": [[...]]}`. Several services can share one embedding endpoint |
+| Neither | — | lexical-overlap similarity, no model download |
+
+See [`.env.example`](.env.example) for every variable.
 
 ## 5. Deploying to a container host
 

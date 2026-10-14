@@ -1,5 +1,7 @@
 # Benchmark Results
 
+> Figures recorded: 2026-09 (judge runs on HaluEval-QA). Document last reviewed: 2026-10-14.
+
 RAGeval's groundedness-judging component is evaluated against HaluEval-QA, a labeled
 hallucination-detection benchmark, comparing individual LLM judges against several methods of
 combining them into a consensus score. Full methodology and raw results:

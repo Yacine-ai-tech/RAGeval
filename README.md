@@ -17,6 +17,8 @@ persona-scope detection, and a drop-in Python decorator.**
 - **Research Background:** [`RESEARCH.md`](RESEARCH.md) / [Online Research Documentation](https://rageval.ysiddo-ai-projects.app/research)
 - **Empirical Benchmarks:** [`BENCHMARK.md`](BENCHMARK.md) / [Online Benchmark Dashboard](https://rageval.ysiddo-ai-projects.app/benchmarks)
 - **User Guide:** [Online User Guide](https://rageval.ysiddo-ai-projects.app/guide)
+- **Architecture:** [`ARCHITECTURE.md`](ARCHITECTURE.md) / [Online Architecture](https://rageval.ysiddo-ai-projects.app/architecture)
+- **Configuration reference:** [`.env.example`](.env.example)
 - **Self-Hosting Guide:** [`SELF_HOSTING.md`](SELF_HOSTING.md)
 
 ## Overview
@@ -96,7 +98,7 @@ def chain_invoke(query: str, context_chunks: list[str]):
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | /health | Liveness check |
-| GET | /ready | Database readiness check; returns 503 until the schema can be queried |
+| GET | /ready | Readiness: 503 `warming_up` until the embedding backend is loaded, 503 `database_unavailable` until the store answers a query |
 | POST | /eval/log | Score and persist an interaction |
 | POST | /eval/score | Score only, without persisting |
 | GET | /eval/metrics?days=7 | Aggregate dashboard data |
@@ -122,7 +124,7 @@ maximum 300) and remote embeddings use `EMBED_TIMEOUT` (default 30 seconds, maxi
 
 The API initializes and migrates its schema before serving requests. A failed schema
 bootstrap aborts startup rather than leaving a partially usable service; `/health` remains
-a liveness probe and `/ready` verifies database availability.
+a liveness probe and `/ready` verifies that the embedding backend is warm and the database is available.
 
 ## Tests
 

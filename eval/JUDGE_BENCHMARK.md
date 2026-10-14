@@ -1,5 +1,7 @@
 # RAGeval — Multi-Judge Consensus Benchmark (HaluEval)
 
+> Figures recorded: 2026-09. Document last reviewed: 2026-10-14.
+
 Research-grade validation of RAGeval's multi-judge groundedness consensus on **HaluEval** (Li et
 al., 2023), a standard hallucination-detection benchmark. Reproducible:
 `python eval/run_judge_benchmark.py --n 100` (needs `ANTHROPIC_API_KEY` and/or `GROQ_API_KEY`,
