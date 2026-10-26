@@ -117,12 +117,12 @@ def _get_pg_pool():
             import psycopg2.pool
             pool_url = _get_pooler_url(settings.POSTGRES_URL)
             _pg_pool = psycopg2.pool.ThreadedConnectionPool(
-                minconn=2,
+                minconn=0,
                 maxconn=10,
                 dsn=pool_url,
                 connect_timeout=10,
             )
-            log.info("RAGeval Postgres connection pool initialized (min=2, max=10)")
+            log.info("RAGeval Postgres connection pool initialized (min=0, max=10, serverless scale-to-zero optimized)")
         except Exception as e:
             log.warning("Postgres pool initialization failed (%s); using direct connect", e)
             _pg_pool = False
