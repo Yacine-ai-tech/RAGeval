@@ -420,8 +420,40 @@ async def _broadcast(event: Dict[str, Any]) -> None:
             _WS_CLIENTS.pop(ws, None)
 
 
+def _ws_internal_token_ok(websocket: WebSocket) -> bool:
+    """Mirror the HTTP internal-token gate for the WebSocket upgrade request.
+
+    Starlette's ``app.middleware("http")`` only sees HTTP scope, so the token check
+    in ``verify_internal_token`` never runs for WebSocket connections — this handler
+    must enforce it itself when REQUIRE_INTERNAL_TOKEN=true.
+    """
+    if os.environ.get("REQUIRE_INTERNAL_TOKEN", "false").lower() != "true":
+        return True
+    token = (
+        websocket.headers.get("x-rageval-internal-token")
+        or websocket.headers.get("x-internal-token")
+        or websocket.headers.get("x-omniintel-internal-token")
+        or (
+            websocket.headers.get("authorization", "").removeprefix("Bearer ")
+            if websocket.headers.get("authorization", "").startswith("Bearer ")
+            else ""
+        )
+    )
+    expected = [
+        t for t in (
+            os.environ.get("RAGEVAL_INTERNAL_TOKEN"),
+            os.environ.get("INTERNAL_TOKEN"),
+            os.environ.get("OMNIINTEL_INTERNAL_TOKEN"),
+        ) if t
+    ]
+    return bool(token) and any(token == exp for exp in expected)
+
+
 @app.websocket("/eval/live")
 async def eval_live_ws(websocket: WebSocket):
+    if not _ws_internal_token_ok(websocket):
+        await websocket.close(code=4403)
+        return
     session_id = websocket.headers.get("x-demo-session-id")
     await websocket.accept()
     async with _ws_lock:

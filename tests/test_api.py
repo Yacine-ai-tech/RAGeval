@@ -293,3 +293,38 @@ def test_retrieval_bench_relevant_chunks_length_mismatch_is_400():
     if r.status_code in (401, 403):
         pytest.skip("no valid RAGEVAL_INTERNAL_TOKEN in this environment")
     assert r.status_code == 400
+
+
+def test_eval_live_ws_requires_internal_token_when_enabled(monkeypatch):
+    """The /eval/live WebSocket must enforce the same internal-token gate as the
+    HTTP routes when REQUIRE_INTERNAL_TOKEN=true — Starlette's http middleware
+    never sees websocket scope, so the handler checks it itself."""
+    from starlette.websockets import WebSocketDisconnect
+
+    monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "true")
+    monkeypatch.setenv("RAGEVAL_INTERNAL_TOKEN", "test-ws-token")
+    client = _client()
+
+    # No token -> rejected before accept.
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/eval/live"):
+            pass
+
+    # Wrong token -> rejected.
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(
+            "/eval/live", headers={"X-RAGeval-Internal-Token": "wrong"}
+        ):
+            pass
+
+    # Valid token -> accepted.
+    with client.websocket_connect(
+        "/eval/live", headers={"X-RAGeval-Internal-Token": "test-ws-token"}
+    ) as ws:
+        ws.send_text("ping")
+
+
+def test_eval_live_ws_open_when_token_gate_disabled(monkeypatch):
+    monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "false")
+    with _client().websocket_connect("/eval/live") as ws:
+        ws.send_text("ping")
