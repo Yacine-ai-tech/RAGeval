@@ -2,6 +2,7 @@ import UserGuidePage from './pages/UserGuidePage'
 import BenchmarkPage from './pages/BenchmarkPage';
 import ResearchPage from './pages/ResearchPage';
 import ArchitecturePage from './pages/ArchitecturePage';
+import LicensePage from './pages/LicensePage.tsx';
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark, BookOpen, Award, GraduationCap, Workflow } from "lucide-react";
@@ -81,7 +82,8 @@ export default function App() {
               <Route path="/research" element={<ResearchPage />} />
               <Route path="/benchmark" element={<BenchmarkPage />} />
               <Route path="/benchmarks" element={<Navigate to="/benchmark" replace />} />
-              <Route path="/user-guide" element={<UserGuidePage />} />
+                            <Route path="/license" element={<LicensePage />} />
+<Route path="/user-guide" element={<UserGuidePage />} />
               <Route path="/guide" element={<Navigate to="/user-guide" replace />} />
               <Route path="*" element={<Overview />} />
             </Routes>
