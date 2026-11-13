@@ -58,6 +58,34 @@ def test_oversized_request_body_is_rejected():
     assert response.status_code == 413
 
 
+def test_experiment_endpoints_require_token_when_flag_enabled(monkeypatch):
+    """EXPERIMENT_ENDPOINTS_REQUIRE_TOKEN=true locks only the expensive routes
+    (/eval/retrieval-bench, /eval/embedding-comparison) while REQUIRE_INTERNAL_TOKEN
+    stays false — the rest of the API remains open."""
+    monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "false")
+    monkeypatch.setenv("EXPERIMENT_ENDPOINTS_REQUIRE_TOKEN", "true")
+    monkeypatch.setenv("RAGEVAL_INTERNAL_TOKEN", "test-secret")
+    client = _client()
+
+    for path in ("/eval/retrieval-bench", "/eval/embedding-comparison"):
+        r = client.post(path, json={})
+        assert r.status_code == 403, path
+        r = client.post(path, json={}, headers={"X-RAGeval-Internal-Token": "test-secret"})
+        assert r.status_code != 403, path
+
+    # A non-expensive route stays open under the same flag.
+    r = client.get("/eval/metrics?days=7")
+    assert r.status_code != 403
+
+
+def test_experiment_endpoints_open_when_flag_disabled(monkeypatch):
+    monkeypatch.setenv("REQUIRE_INTERNAL_TOKEN", "false")
+    monkeypatch.setenv("EXPERIMENT_ENDPOINTS_REQUIRE_TOKEN", "false")
+    monkeypatch.delenv("RAGEVAL_INTERNAL_TOKEN", raising=False)
+    r = _client().post("/eval/retrieval-bench", json={})
+    assert r.status_code != 403
+
+
 def test_retrieval_bench_rejects_over_budget_query_count():
     queries = [f"query-{i}" for i in range(11)]
     groups = [["candidate"] for _ in queries]
