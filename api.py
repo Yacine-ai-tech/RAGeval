@@ -342,6 +342,12 @@ threading.Thread(target=_license_beacon, daemon=True).start()
 
 # ─── Middleware ───────────────────────────────────────────────────────────────
 
+# Routes that do heavy work per request (model loads / 2N scoring passes). When
+# EXPERIMENT_ENDPOINTS_REQUIRE_TOKEN=true these require the internal token even
+# though REQUIRE_INTERNAL_TOKEN stays false for the rest of the API.
+_EXPENSIVE_ENDPOINTS = frozenset({"/eval/embedding-comparison", "/eval/retrieval-bench"})
+
+
 @app.middleware("http")
 async def verify_internal_token(request: Request, call_next):
     """Token gate: every API route, reads and writes, requires the internal token when
@@ -382,8 +388,21 @@ async def verify_internal_token(request: Request, call_next):
             os.environ.get("OMNIINTEL_INTERNAL_TOKEN"),
         ) if t
     ]
-    if os.environ.get("REQUIRE_INTERNAL_TOKEN", "false").lower() == "true":
-        if not token or not any(hmac.compare_digest(token, exp) for exp in expected_tokens):
+    token_ok = bool(token) and any(hmac.compare_digest(token, exp) for exp in expected_tokens)
+
+    # Per-route protection for the expensive endpoints: /eval/embedding-comparison
+    # can trigger embedding-model loads and /eval/retrieval-bench runs 2N scoring
+    # passes, so deployments that keep REQUIRE_INTERNAL_TOKEN=false for the demo
+    # dashboard can still lock just these two routes down with
+    # EXPERIMENT_ENDPOINTS_REQUIRE_TOKEN=true. Off by default — the frontend
+    # Experiments page calls them with no token, so enabling this 403s that page
+    # unless the gateway injects the token.
+    _expensive_protected = (
+        os.environ.get("EXPERIMENT_ENDPOINTS_REQUIRE_TOKEN", "false").lower() == "true"
+        and path in _EXPENSIVE_ENDPOINTS
+    )
+    if os.environ.get("REQUIRE_INTERNAL_TOKEN", "false").lower() == "true" or _expensive_protected:
+        if not token_ok:
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Missing or invalid X-RAGeval-Internal-Token"},

@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS rageval_log (
 );
 CREATE INDEX IF NOT EXISTS idx_rageval_ts ON rageval_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_rageval_model ON rageval_log(model);
+CREATE INDEX IF NOT EXISTS idx_rageval_session ON rageval_log(session_id);
 """
 
 def _schema_pg() -> str:
@@ -78,6 +79,7 @@ ALTER TABLE rageval_log ADD COLUMN IF NOT EXISTS needs_review INTEGER DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_rageval_ts ON rageval_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_rageval_review ON rageval_log(needs_review);
 CREATE INDEX IF NOT EXISTS idx_rageval_model ON rageval_log(model);
+CREATE INDEX IF NOT EXISTS idx_rageval_session ON rageval_log(session_id);
 CREATE INDEX IF NOT EXISTS idx_rageval_embedding ON rageval_log
     USING hnsw (query_embedding vector_cosine_ops)
     WHERE query_embedding IS NOT NULL;
