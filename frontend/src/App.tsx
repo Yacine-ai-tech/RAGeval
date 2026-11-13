@@ -1,8 +1,3 @@
-import UserGuidePage from './pages/UserGuidePage'
-import BenchmarkPage from './pages/BenchmarkPage';
-import ResearchPage from './pages/ResearchPage';
-import ArchitecturePage from './pages/ArchitecturePage';
-import LicensePage from './pages/LicensePage.tsx';
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Gauge, ListTree, FlaskConical, Beaker, CircleDollarSign, BellRing, Code2, RadioTower, Boxes, Bookmark, BookOpen, Award, GraduationCap, Workflow } from "lucide-react";
@@ -10,18 +5,23 @@ import { AppShell } from "./kit/AppShell";
 import { WakingBackend } from "./kit/misc";
 import { Skeleton } from "./kit/primitives";
 import { api } from "./lib/api";
-import Queries from "./pages/Queries";
-import Evaluate from "./pages/Evaluate";
-import Experiments from "./pages/Experiments";
-import Alerts from "./pages/Alerts";
-import Instrumentation from "./pages/Instrumentation";
-import Traces from "./pages/Traces";
-import Models from "./pages/Models";
-import Saved from "./pages/Saved";
-import ApiDocs from "./pages/ApiDocs";
 
 const Overview = lazy(() => import("./pages/Overview"));
 const Cost = lazy(() => import("./pages/Cost"));
+const Queries = lazy(() => import("./pages/Queries"));
+const Evaluate = lazy(() => import("./pages/Evaluate"));
+const Experiments = lazy(() => import("./pages/Experiments"));
+const Alerts = lazy(() => import("./pages/Alerts"));
+const Instrumentation = lazy(() => import("./pages/Instrumentation"));
+const Traces = lazy(() => import("./pages/Traces"));
+const Models = lazy(() => import("./pages/Models"));
+const Saved = lazy(() => import("./pages/Saved"));
+const ApiDocs = lazy(() => import("./pages/ApiDocs"));
+const ArchitecturePage = lazy(() => import("./pages/ArchitecturePage"));
+const ResearchPage = lazy(() => import("./pages/ResearchPage"));
+const BenchmarkPage = lazy(() => import("./pages/BenchmarkPage"));
+const UserGuidePage = lazy(() => import("./pages/UserGuidePage"));
+const LicensePage = lazy(() => import("./pages/LicensePage"));
 
 const NAV = [
   { to: "/", label: "Overview", icon: Gauge },
@@ -60,7 +60,7 @@ export default function App() {
   }, [health, attempts]);
 
   return (
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <BrowserRouter>
       <AppShell product="RAGeval" tagline="LLMOps Observability" nav={NAV} health={health}>
         {health !== "ok" && !(health === "checking" && attempts === 0) ? (
           <WakingBackend waking={attempts < 6} onRetry={() => setAttempts(0)} />
@@ -82,8 +82,8 @@ export default function App() {
               <Route path="/research" element={<ResearchPage />} />
               <Route path="/benchmark" element={<BenchmarkPage />} />
               <Route path="/benchmarks" element={<Navigate to="/benchmark" replace />} />
-                            <Route path="/license" element={<LicensePage />} />
-<Route path="/user-guide" element={<UserGuidePage />} />
+              <Route path="/license" element={<LicensePage />} />
+              <Route path="/user-guide" element={<UserGuidePage />} />
               <Route path="/guide" element={<Navigate to="/user-guide" replace />} />
               <Route path="*" element={<Overview />} />
             </Routes>
