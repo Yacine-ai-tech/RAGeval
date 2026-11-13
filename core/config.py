@@ -39,8 +39,11 @@ class Settings:
     LOG_FORMAT = os.getenv("LOG_FORMAT", "%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     LOGS_DIR = str(LOGS_DIR)
 
-    # CORS: comma-separated allowed origins. Empty -> "*" (dev). Set in production.
-    CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+    # CORS: comma-separated allowed origins. Default is EMPTY — no cross-origin
+    # browser access. The dashboard is served same-origin by this app, so it needs
+    # no CORS entry; set explicit origins (or "*") only for a separately-hosted
+    # browser frontend.
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
     RAGEVAL_STORE = os.getenv("RAGEVAL_STORE", "sqlite")
     RAGEVAL_DB_PATH = os.getenv("RAGEVAL_DB_PATH", str(RAGEVAL_HOME / "rageval.db"))

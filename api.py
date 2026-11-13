@@ -31,6 +31,7 @@ if not _os_early.environ.get("RAGEVAL_POSTGRES_URL") and _os_early.environ.get("
     _os_early.environ["RAGEVAL_POSTGRES_URL"] = _os_early.environ["POSTGRES_URL"]
 
 import asyncio
+import hmac
 import time
 import threading
 import uuid as _uuid
@@ -198,6 +199,33 @@ def _validate_single_eval(query: str, answer: str, chunks: List[str]) -> None:
         raise HTTPException(status_code=422, detail="answer_too_long")
 
 
+def _resolve_chunks(chunks: List[str], contexts: List[str]) -> List[str]:
+    """`chunks` and `contexts` are the same field under two names (clients use either).
+    Previously `contexts` was silently dropped whenever `chunks` was also sent, and an
+    unrecognized field name produced an empty chunk list that scored relevance 0 with
+    no error. Now: both-sent-with-different-content is a 400, and a scored call with
+    no chunks at all is a 422 — retrieval relevance cannot be computed without them."""
+    if chunks and contexts and chunks != contexts:
+        raise HTTPException(status_code=400, detail="conflicting_chunks_and_contexts")
+    resolved = chunks or contexts
+    if not resolved:
+        raise HTTPException(status_code=422, detail="chunks_required")
+    return resolved
+
+
+# Keys produced by score_interaction that exist only for internal persistence and must
+# never be serialized into an HTTP response — query_embedding alone is a ~1024-float
+# vector (~20KB) per call.
+_INTERNAL_SCORE_KEYS = frozenset({"query_embedding"})
+
+
+def _public_scores(scores: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        k: v for k, v in scores.items()
+        if k not in _INTERNAL_SCORE_KEYS and not k.endswith("_embedding")
+    }
+
+
 # Read the real installed package version rather than hardcoding one.
 try:
     from importlib.metadata import version as _pkg_version
@@ -339,15 +367,13 @@ async def verify_internal_token(request: Request, call_next):
     # REQUIRE_INTERNAL_TOKEN=true. The browser dashboard reaches this service through
     # the gateway, which attaches the token and the visitor's session header; a direct
     # caller without the token gets nothing.
-    # WebSocket /eval/live is session-scoped inside its own handler.
-    if path == "/eval/live":
-        return await call_next(request)
-
+    # WebSocket upgrades never reach this middleware (HTTP scope only) — the
+    # /eval/live handler enforces the same token check itself.
     token = (
         request.headers.get("X-RAGeval-Internal-Token")
         or request.headers.get("X-Internal-Token")
         or request.headers.get("X-OmniIntel-Internal-Token")
-        or (request.headers.get("Authorization", "").replace("Bearer ", "") if request.headers.get("Authorization", "").startswith("Bearer ") else "")
+        or (request.headers.get("Authorization", "").removeprefix("Bearer ") if request.headers.get("Authorization", "").startswith("Bearer ") else "")
     )
     expected_tokens = [
         t for t in (
@@ -357,7 +383,7 @@ async def verify_internal_token(request: Request, call_next):
         ) if t
     ]
     if os.environ.get("REQUIRE_INTERNAL_TOKEN", "false").lower() == "true":
-        if not token or not any(token == exp for exp in expected_tokens):
+        if not token or not any(hmac.compare_digest(token, exp) for exp in expected_tokens):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Missing or invalid X-RAGeval-Internal-Token"},
@@ -368,7 +394,10 @@ async def verify_internal_token(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ALLOWED_ORIGINS or ["*"],
+    # Default is now an empty allow-list (no cross-origin browser access); the
+    # dashboard is served same-origin by this app. Set CORS_ALLOWED_ORIGINS
+    # explicitly (or "*") only when a browser app on another origin must call us.
+    allow_origins=settings.CORS_ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -468,7 +497,7 @@ def _ws_internal_token_ok(websocket: WebSocket) -> bool:
             os.environ.get("OMNIINTEL_INTERNAL_TOKEN"),
         ) if t
     ]
-    return bool(token) and any(token == exp for exp in expected)
+    return bool(token) and any(hmac.compare_digest(token, exp) for exp in expected)
 
 
 @app.websocket("/eval/live")
@@ -636,23 +665,34 @@ async def eval_log(req: LogRequest, request: Request) -> Dict[str, Any]:
     # Rate-limit write endpoints that trigger LLM judge calls.
     if _RATE_LIMIT_ENABLED and _limiter:
         _limiter._check_request_limit(request, eval_log, "60/minute")  # type: ignore[arg-type]
-    _validate_single_eval(req.query, req.answer, req.chunks or req.contexts)
+    chunks = _resolve_chunks(req.chunks, req.contexts)
+    _validate_single_eval(req.query, req.answer, chunks)
     session_id = _resolve_session_id(request, req.session_id)
     _emit("interaction.received", route="/eval/log", query=req.query[:120], persona=req.persona, session_id=session_id)
     try:
         async with _evaluation_slot():
             scores = await evaluator.score_interaction(
-                query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
+                query=req.query, answer=req.answer, chunks=chunks,
                 tokens_used=req.tokens_used, latency_ms=req.latency_ms,
                 model=req.model, persona=req.persona,
             )
     except InsufficientJudgesError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    await log_interaction(req.query, req.answer, req.persona, scores, session_id)
+    # A persistence failure must NOT turn a successfully-scored call into a 500 —
+    # the client would retry and pay for the judge calls twice. Return the scores
+    # with persisted=false instead.
+    persisted = True
+    try:
+        await log_interaction(req.query, req.answer, req.persona, scores, session_id)
+    except Exception:
+        log.exception("failed to persist /eval/log interaction")
+        persisted = False
     c = scores.get("groundedness_consensus", {})
     _emit("interaction.scored", route="/eval/log", overall=scores.get("overall_quality"),
-          judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=True, session_id=session_id)
-    return scores
+          judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=persisted, session_id=session_id)
+    public = _public_scores(scores)
+    public["persisted"] = persisted
+    return public
 
 
 @app.post("/eval/score")
@@ -660,13 +700,14 @@ async def eval_score(req: ScoreRequest, request: Request) -> Dict[str, Any]:
     # Rate-limit score endpoint — each call triggers multiple LLM judge calls.
     if _RATE_LIMIT_ENABLED and _limiter:
         _limiter._check_request_limit(request, eval_score, "60/minute")  # type: ignore[arg-type]
-    _validate_single_eval(req.query, req.answer, req.chunks or req.contexts)
+    chunks = _resolve_chunks(req.chunks, req.contexts)
+    _validate_single_eval(req.query, req.answer, chunks)
     session_id = _resolve_session_id(request, None)
     _emit("interaction.received", route="/eval/score", query=req.query[:120], persona=req.persona, session_id=session_id)
     try:
         async with _evaluation_slot():
             scores = await evaluator.score_interaction(
-                query=req.query, answer=req.answer, chunks=req.chunks or req.contexts,
+                query=req.query, answer=req.answer, chunks=chunks,
                 tokens_used=req.tokens_used, latency_ms=req.latency_ms,
                 model=req.model, persona=req.persona,
             )
@@ -675,7 +716,9 @@ async def eval_score(req: ScoreRequest, request: Request) -> Dict[str, Any]:
     c = scores.get("groundedness_consensus", {})
     _emit("interaction.scored", route="/eval/score", overall=scores.get("overall_quality"),
           judges_used=c.get("judges_used"), flags=scores.get("flags"), persisted=False, session_id=session_id)
-    return scores
+    public = _public_scores(scores)
+    public["persisted"] = False
+    return public
 
 
 @app.get("/eval/events")
@@ -715,8 +758,8 @@ _UNASSIGNED = "anonymous_unassigned"
 async def eval_metrics(request: Request, days: int = Query(default=7, ge=1, le=365)) -> Dict[str, Any]:
     sess = _resolve_session_id(request)
     if sess == _UNASSIGNED:
-        return get_metrics(days=days, session_id="__none__", include_seed=False)
-    return get_metrics(days=days, session_id=sess, include_seed=(sess == "*"))
+        return await asyncio.to_thread(get_metrics, days=days, session_id="__none__", include_seed=False)
+    return await asyncio.to_thread(get_metrics, days=days, session_id=sess, include_seed=(sess == "*"))
 
 
 @app.get("/eval/queries")
@@ -728,15 +771,15 @@ async def eval_queries(
     sess = _resolve_session_id(request)
     if sess == _UNASSIGNED:
         return []
-    return get_query_log(limit=limit, needs_review=needs_review, session_id=sess, include_seed=(sess == "*"))
+    return await asyncio.to_thread(get_query_log, limit=limit, needs_review=needs_review, session_id=sess, include_seed=(sess == "*"))
 
 
 @app.get("/eval/cost-report")
 async def eval_cost_report(request: Request, days: int = Query(default=30, ge=1, le=365)) -> Dict[str, Any]:
     sess = _resolve_session_id(request)
     if sess == _UNASSIGNED:
-        return get_cost_report(days=days, session_id="__none__", include_seed=False)
-    return get_cost_report(days=days, session_id=sess, include_seed=(sess == "*"))
+        return await asyncio.to_thread(get_cost_report, days=days, session_id="__none__", include_seed=False)
+    return await asyncio.to_thread(get_cost_report, days=days, session_id=sess, include_seed=(sess == "*"))
 
 
 @app.get("/eval/alerts")
@@ -744,7 +787,7 @@ async def eval_alerts(request: Request) -> Dict[str, Any]:
     sess = _resolve_session_id(request)
     if sess == _UNASSIGNED:
         return {"flagged_count": 0, "alerts": []}
-    flagged = get_query_log(limit=50, needs_review=True, session_id=sess, include_seed=(sess == "*"))
+    flagged = await asyncio.to_thread(get_query_log, limit=50, needs_review=True, session_id=sess, include_seed=(sess == "*"))
     return {"flagged_count": len(flagged), "alerts": flagged[:10]}
 
 
@@ -829,6 +872,24 @@ async def retrieval_bench(req: RetrievalBenchRequest) -> Dict[str, Any]:
     }
 
 
+# Process-wide RAGEvaluator cache keyed by embedding model name —
+# /eval/embedding-comparison used to construct a fresh RAGEvaluator (and, with a local
+# embedder, reload the model weights) on every request.
+_evaluator_cache: Dict[str, RAGEvaluator] = {}
+_evaluator_cache_lock = threading.Lock()
+
+
+def _evaluator_for(embedding_model: str) -> RAGEvaluator:
+    ev = _evaluator_cache.get(embedding_model)
+    if ev is None:
+        with _evaluator_cache_lock:
+            ev = _evaluator_cache.get(embedding_model)
+            if ev is None:
+                ev = RAGEvaluator(embedding_model=embedding_model)
+                _evaluator_cache[embedding_model] = ev
+    return ev
+
+
 @app.post("/eval/embedding-comparison")
 async def embedding_comparison(req: EmbeddingComparisonRequest) -> Dict[str, Any]:
     if not req.queries:
@@ -839,7 +900,7 @@ async def embedding_comparison(req: EmbeddingComparisonRequest) -> Dict[str, Any
     results: Dict[str, float] = {}
 
     async def _eval_model(model):
-        ev = RAGEvaluator(embedding_model=model)
+        ev = _evaluator_for(model)
         scores = await asyncio.gather(
             *[asyncio.to_thread(ev.score_retrieval_relevance, q, cs)
               for q, cs in zip(req.queries, req.chunks)]

@@ -16,7 +16,9 @@ services:
       dockerfile: Dockerfile
     image: rageval:dev
     volumes:
-      - ./rageval:/app/rageval
+      # api.py puts /app/src on sys.path — mount over /app/src/rageval so the
+      # live-edit mount actually shadows the image's copy (./rageval doesn't exist).
+      - ./src/rageval:/app/src/rageval
       - ./core:/app/core
       - ./api.py:/app/api.py
       - ./logs:/app/logs
@@ -37,7 +39,8 @@ services:
       --reload
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      # python:3.11-slim has no curl — probe /health with urllib instead.
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:8003/health', timeout=5).status == 200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
