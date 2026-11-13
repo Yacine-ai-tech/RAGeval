@@ -704,9 +704,15 @@ class RAGEvaluator:
         if isinstance(faithfulness, BaseException):
             raise faithfulness
 
-        # Measure wall-clock elapsed time if latency_ms was omitted by caller
-        if latency_ms <= 0:
-            latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+        # latency_ms is the caller's own end-to-end latency and is the ONLY valid
+        # signal for HIGH_LATENCY. When the caller omits it (<=0) we must NOT synthesize
+        # it from this function's wall-clock time — that would include the judge LLM
+        # calls' latency and flag every single row for review. Store 0 instead, and
+        # keep the scoring duration as a separate, clearly-named field.
+        caller_latency_ms = latency_ms
+        if caller_latency_ms <= 0:
+            latency_ms = 0.0
+        scoring_latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
 
         # Estimate tokens if not provided by caller
         if tokens_used <= 0:
@@ -727,7 +733,7 @@ class RAGEvaluator:
             flags.append("LOW_RETRIEVAL_RELEVANCE")
         if groundedness < 0.6:
             flags.append("POTENTIAL_HALLUCINATION")
-        if latency_ms > 5000:
+        if caller_latency_ms > 5000:
             flags.append("HIGH_LATENCY")
         if consensus["flag_for_review"]:
             flags.append("JUDGE_DISAGREEMENT")
@@ -750,6 +756,7 @@ class RAGEvaluator:
             "faithfulness": faithfulness,
             "cost_usd": cost,
             "latency_ms": latency_ms,
+            "scoring_latency_ms": scoring_latency_ms,
             "tokens_used": tokens_used,
             "model": model,
             "persona": persona,

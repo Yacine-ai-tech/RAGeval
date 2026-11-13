@@ -15,12 +15,12 @@ def _client():
 
 
 def _internal_auth_headers() -> dict:
-    """The internal-token middleware gates POST write routes only — /, /health, /docs,
-    static assets, all GET /eval/* routes, and the /eval/live websocket stay open —
-    when REQUIRE_INTERNAL_TOKEN=true (opt-in, off by default: the public dashboard
-    itself needs to be reachable with no token). Reuse whatever real token is
-    configured in the environment so tests exercise the actual endpoint, not just the
-    pass-through/403 behavior of the gate."""
+    """When REQUIRE_INTERNAL_TOKEN=true, EVERY API route — reads and writes alike —
+    requires the internal token; only /, /health, /ready, /docs and static assets
+    stay open (the /eval/live WebSocket enforces the same check inside its own
+    handler). The gate is opt-in and off by default. Reuse whatever real token is
+    configured in the environment so tests exercise the actual endpoint, not just
+    the pass-through/403 behavior of the gate."""
     token = os.environ.get("RAGEVAL_INTERNAL_TOKEN", "")
     return {"X-RAGeval-Internal-Token": token} if token else {}
 

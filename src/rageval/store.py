@@ -147,7 +147,11 @@ def _execute(sql: str, params: tuple = (), fetchall: bool = False, is_script: bo
             if not is_script:
                 sql = sql.replace('?', '%s')
         else:
-            conn = sqlite3.connect(_db_path())
+            # timeout=30 + busy_timeout PRAGMA: without them a locked SQLite file
+            # fails immediately with "database is locked" instead of waiting for the
+            # writer to finish.
+            conn = sqlite3.connect(_db_path(), timeout=30.0)
+            conn.execute("PRAGMA busy_timeout = 30000")
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             
@@ -171,9 +175,14 @@ def _execute(sql: str, params: tuple = (), fetchall: bool = False, is_script: bo
                 conn.rollback()
             except Exception:
                 pass
-        if _retries > 0 and is_pg:
-            import psycopg2
-            if isinstance(e, psycopg2.OperationalError):
+        if _retries > 0:
+            retryable = False
+            if is_pg:
+                import psycopg2
+                retryable = isinstance(e, psycopg2.OperationalError)
+            else:
+                retryable = isinstance(e, sqlite3.OperationalError)
+            if retryable:
                 import time
                 time.sleep(0.5)
                 return _execute(sql, params, fetchall, is_script, _retries - 1)
@@ -357,7 +366,11 @@ def get_metrics(days: int = 7, session_id: Optional[str] = None, include_seed: b
             "flagged_count": 0, "query_volume_by_hour": [],
         }
     n = len(rows)
-    avg = lambda k: sum((r[k] or 0) for r in rows) / n
+    # Average over rows that actually have a value — dividing by total rows would
+    # dilute the mean with implicit zeros for NULL columns.
+    def avg(k):
+        vals = [r[k] for r in rows if r[k] is not None]
+        return sum(vals) / len(vals) if vals else 0.0
 
     # Compute query_volume_by_hour from stored timestamps.
     hour_counts: dict = _Counter()
@@ -411,7 +424,10 @@ def get_cost_report(days: int = 30, session_id: Optional[str] = None, include_se
     from datetime import timedelta
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     is_pg = bool(settings.POSTGRES_URL)
-    date_expr = "DATE(timestamp)" if is_pg else "date(timestamp)"
+    # PG: DATE(timestamptz) buckets by the *server* timezone, which can shift a row
+    # into the wrong day. AT TIME ZONE 'UTC' pins the bucketing to UTC, matching the
+    # UTC cutoff used for `timestamp >= ?` and the ISO strings SQLite stores.
+    date_expr = "(timestamp AT TIME ZONE 'UTC')::date" if is_pg else "date(timestamp)"
     scope_sql, scope_params = _scope_clause(session_id, include_seed=include_seed)
     sql = f"""
         SELECT {date_expr} AS day, model, SUM(cost_usd) AS cost
